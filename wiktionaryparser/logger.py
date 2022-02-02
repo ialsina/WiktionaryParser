@@ -1,6 +1,6 @@
 import logging, inspect, os
 
-LOG_PATH = '../logs/log.txt'
+LOG_PATH = os.path.join(os.path.dirname(__file__), '..', 'logs', 'log.txt')
 
 logger = logging.getLogger('log')
 logger.setLevel(logging.DEBUG)

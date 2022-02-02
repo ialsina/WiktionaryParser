@@ -1,5 +1,5 @@
 import json
-from wiktionaryparser import BaseParser, EnglishParser, SpanishParser
+from wiktionaryparser.core import BaseParser, EnglishParser, SpanishParser
 from deepdiff import DeepDiff
 from typing import Dict, List
 import mock
