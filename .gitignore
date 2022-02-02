@@ -114,3 +114,9 @@ dmypy.json
 
 # VSCode
 .vscode/
+
+# PyCharm
+.idea/
+
+# Logs
+logs/
