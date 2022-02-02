@@ -4,7 +4,7 @@ import json
 from wiktionaryparser import BaseParser, EnglishParser
 from deepdiff import DeepDiff
 from typing import Dict, List
-import mock
+import unittest.mock
 from urllib import parse
 import os
 
@@ -64,6 +64,7 @@ def mocked_requests_get(*args, **kwargs):
     word = parsed_url.path.split('/')[-1]
     filepath = os.path.join(html_test_files_dir,
                             f'{word}-{params["oldid"]}.html')
+    print(filepath)
     with open(filepath, 'r', encoding='utf-8') as f:
         text = f.read()
 
@@ -80,13 +81,17 @@ class TestParser(unittest.TestCase):
         super(TestParser, self).__init__(*args, **kwargs)
 
     @parameterized.expand(get_test_words_table())
-    @mock.patch("requests.Session.get", side_effect=mocked_requests_get)
-    def test_fetch_using_mock_session(self, lang: str, word: str, old_id: int, mock_get):
+    @unittest.mock.patch("requests.Session.get", side_effect=mocked_requests_get)
+    def __test_fetch_using_mock_session(self, lang: str, word: str, old_id: int, mock_get):
+        self.__test_fetch(lang, word, old_id)
+
+    @parameterized.expand(get_test_words_table())
+    def test_fetch(self, lang: str, word:str, old_id: int):
         self.__test_fetch(lang, word, old_id)
 
     def __test_fetch(self, lang: str, word: str, old_id: int):
         parser.set_default_language(lang)
-        fetched_word = parser.fetch(word, old_id=old_id, json=True, get_translations=False)
+        fetched_word = parser.fetch(word, old_id=old_id, json=True)
 
         print("Testing \"{}\" in \"{}\"".format(word, lang))
         expected_result = self.expected_results[lang][word]
@@ -106,3 +111,4 @@ class TestParser(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
