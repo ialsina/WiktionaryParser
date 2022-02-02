@@ -5,6 +5,7 @@ from itertools import zip_longest
 from copy import copy
 from string import digits
 from .core import BaseParser, Translator
+from .logger import autolog
 
 PARTS_OF_SPEECH = [
     "noun", "verb", "verbal form", "adjective", "adverb", "determiner",
@@ -85,6 +86,7 @@ class SpanishParser(BaseParser):
             span_tag = self.soup.find_all('span', {'id': etymology_id})[0]
             self._DEBUG['et'].append(span_tag)
             next_tag = span_tag.find_next_sibling()
+            autolog('next_tag = {}'.format(next_tag))
             while next_tag and next_tag.name not in ['h3', 'h4', 'div', 'h5']:
                 etymology_tag = next_tag
                 next_tag = next_tag.find_next_sibling()
@@ -94,4 +96,5 @@ class SpanishParser(BaseParser):
                     for list_tag in etymology_tag.find_all('li'):
                         etymology_text += list_tag.text + '\n'
             etymology_list.append((etymology_index, etymology_text))
+        autolog(etymology_list)
         return etymology_list

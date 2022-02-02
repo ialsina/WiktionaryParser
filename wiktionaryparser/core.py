@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from itertools import zip_longest
 from copy import copy
 from string import digits
+from .logger import autolog
 
 PARTS_OF_SPEECH = [
     "noun", "verb", "adjective", "adverb", "determiner",
@@ -280,21 +281,26 @@ class BaseParser(object):
     def parse_etymologies(self):
         word_contents = self.word_contents
         etymology_id_list = self.get_id_list('etymologies')
+        autolog(etymology_id_list)
         etymology_list = []
         etymology_tag = None
         for etymology_index, etymology_id, _ in etymology_id_list:
             etymology_text = ''
             span_tag = self.soup.find_all('span', {'id': etymology_id})[0]
             next_tag = span_tag.parent.find_next_sibling()
+            autolog('next_tag = {}'.format(next_tag))
             while next_tag and next_tag.name not in ['h3', 'h4', 'div', 'h5']:
+                autolog('next_tag: VALID')
                 etymology_tag = next_tag
                 next_tag = next_tag.find_next_sibling()
+                autolog('next_tag = {}'.format(next_tag))
                 if etymology_tag.name == 'p':
                     etymology_text += etymology_tag.text
                 else:
                     for list_tag in etymology_tag.find_all('li'):
                         etymology_text += list_tag.text + '\n'
             etymology_list.append((etymology_index, etymology_text))
+        autolog(etymology_list)
         return etymology_list
 
     def parse_related_words(self):
@@ -494,8 +500,10 @@ class BaseParser(object):
         for content in contents:
             index = content.find_previous().text
             content_text = self.remove_digits(content.text.lower())
+            autolog("content_text: {}".format(content_text))
             #if index.startswith(start_index) and content_text in self.INCLUDED_ITEMS:
             if index.startswith(start_index) and any(el in content_text for el in self.INCLUDED_ITEMS):
+                autolog("content_text----VALID")
                 word_contents.append(content)
 
         self.word_contents = word_contents
