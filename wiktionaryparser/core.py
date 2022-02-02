@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from itertools import zip_longest
 from copy import copy
 from string import digits
+from abc import ABC, abstractmethod
 from .logger import autolog
 
 PARTS_OF_SPEECH = [
@@ -80,7 +81,7 @@ class Translator:
         return set(list(self.keys()) + list(self.values()))
 
 
-class BaseParser(object):
+class BaseParser(ABC):
 
     def __init__(self):
         self.url = "https://{lang_pref}.wiktionary.org/wiki/{query}?printable=yes"
@@ -99,18 +100,22 @@ class BaseParser(object):
         self._DEBUG = {}
 
     # @property
+    # @abstractmethod
     # def PARTS_OF_SPEECH(self):
     #    pass
     #
     #    #@property
+    #    #@abstractmethod
     #    #def RELATIONS(self):
     #    pass
 
     @property
+    @abstractmethod
     def TRANSL(self):
         pass
 
     @property
+    @abstractmethod
     def LANG_PREFFIX(self):
         pass
 
