@@ -35,11 +35,13 @@ class WordData(object):
 
 
 class Definition(object):
-    def __init__(self, part_of_speech = None, text = None, related_words = None, example_uses = None):
+    def __init__(self, part_of_speech=None, text=None, related_words=None, example_uses=None, translations=None):
         self.part_of_speech = part_of_speech if part_of_speech else ''
         self.text = text if text else ''
         self.related_words = related_words if related_words else []
         self.example_uses = example_uses if example_uses else []
+        self.translations = translations if translations else []
+
 
     @property
     def related_words(self):
@@ -59,12 +61,15 @@ class Definition(object):
             self._related_words = related_words
 
     def to_json(self):
-        return {
+        output = {
             'partOfSpeech': self.part_of_speech,
             'text': self.text,
             'relatedWords': [related_word.to_json() for related_word in self.related_words],
-            'examples': self.example_uses 
+            'examples': self.example_uses,
         }
+        if self.translations:
+            output['translations'] = self.translations
+        return output
 
 
 class RelatedWord(object):
