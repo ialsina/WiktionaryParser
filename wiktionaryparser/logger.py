@@ -23,7 +23,7 @@ def autolog(message, emphasis=1):
     import inspect, logging
     # Get the previous frame in the stack, otherwise it would
     # be this function!!!
-    func = inspect.currentframe().fwback.f_code
+    func = inspect.currentframe().f_back.f_code
 
     message = str(message)
 

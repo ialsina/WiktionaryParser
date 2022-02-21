@@ -94,7 +94,7 @@ class BaseParser(ABC):
         self.current_word = None
         self.word_data = None
         self.word_contents = None
-        self.get_translations = None
+        self.get_translations = True
         self.PARTS_OF_SPEECH = []
         self.RELATIONS = []
         self._DEBUG = {}
@@ -471,7 +471,7 @@ class BaseParser(ABC):
                 session2 = requests.Session()
                 session2.mount("http://", requests.adapters.HTTPAdapter(max_retries=2))
                 session2.mount("https://", requests.adapters.HTTPAdapter(max_retries=2))
-                response = session2.get(self.url.format(self.url_preffix, url2))
+                response = session2.get(self.url.format(lang_pref = self.LANG_PREFFIX, query = url2))
                 soup2 = BeautifulSoup(response.text, 'html.parser')
                 span_tag = soup2.find('span', {'id': url2.split('#')[1]})
                 self.soup2 = soup2
