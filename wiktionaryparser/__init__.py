@@ -10,5 +10,5 @@ __all__ = [
     'PARTS_OF_SPEECH',
     'RELATIONS',
     'WiktionaryParser',
-    'PATH_LOG'
+    'PATH_LOG',
 ]

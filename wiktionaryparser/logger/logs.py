@@ -1,6 +1,6 @@
 import logging, inspect, os
 
-from wiktionaryparser.definitions import PATH_LOG
+from wiktionaryparser.definitions import PATH_LOG, PATH_ERRLOG
 
 logger = logging.getLogger('log')
 logger.setLevel(logging.DEBUG)
@@ -17,9 +17,13 @@ file_handler.setFormatter(file_formatter)
 
 logger.addHandler(file_handler)
 
+errlogger = logging.getLogger('error')
+errlogger.setLevel(logging.ERROR)
+errfile_handler = logging.FileHandler(PATH_ERRLOG, 'a')
+errlogger.addHandler(errfile_handler)
+
 def autolog(message, arg=1):
     "Automatically log the current function details."
-    import inspect, logging
     # Get the previous frame in the stack, otherwise it would
     # be this function!!!
     func = inspect.currentframe().f_back.f_code
@@ -44,6 +48,15 @@ def autolog(message, arg=1):
         func.co_firstlineno
     ))
 
+
+def errorlog(exception):
+    func = inspect.currentframe().f_back.f_code
+    message = exception.message.replace("\n", " ")
+    errlogger.error('{0:40s} {1:>30s}'.format(message, func.co_name))
+
+
 def clearlog():
-    with open('log.txt', 'w') as f:
+    with open(PATH_LOG, 'w') as f:
+        pass
+    with open(PATH_ERRLOG, 'w') as f:
         pass
