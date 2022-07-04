@@ -1,26 +1,30 @@
+# TO BE DEPRECATED
+
 import logging, inspect, os
 
-from wiktionaryparser.definitions import PATH_LOG, PATH_ERRLOG
+from wiktionaryparser.definitions import PATH_LOG, PATH_DEBUG
 
-logger = logging.getLogger('log')
-logger.setLevel(logging.DEBUG)
+_debugger = logging.getLogger(__name__ + '.debugger')
+_debugger.setLevel(logging.DEBUG)
 
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
 console_formatter = logging.Formatter('%(asctime)s | %(message)s', '%H:%M:%S')
 console_handler.setFormatter(console_formatter)
 
-file_handler = logging.FileHandler(PATH_LOG, 'a')
+file_handler = logging.FileHandler(PATH_DEBUG, 'w')
 file_handler.setLevel(logging.DEBUG)
 file_formatter = logging.Formatter('%(asctime)s | %(message)s', '%H:%M:%S')
 file_handler.setFormatter(file_formatter)
 
-logger.addHandler(file_handler)
+_debugger.addHandler(file_handler)
 
-errlogger = logging.getLogger('error')
-errlogger.setLevel(logging.ERROR)
-errfile_handler = logging.FileHandler(PATH_ERRLOG, 'a')
-errlogger.addHandler(errfile_handler)
+_parsing_logger = logging.getLogger(__name__)
+_parsing_logger.setLevel(logging.ERROR)
+_parsing_logger.setLevel(logging.WARNING)
+file_handler = logging.FileHandler(PATH_LOG, 'r')
+_parsing_logger.addHandler(file_handler)
+_parsing_logger.addHandler(console_handler)
 
 def autolog(message, arg=1):
     "Automatically log the current function details."
@@ -41,7 +45,7 @@ def autolog(message, arg=1):
     message = str(message)
 
     # Dump the message + the name of this function to the log.
-    logger.debug('{2:<20s} {3:>4d} | {1:<30s} | {0:s}'.format(
+    _debugger.debug('{2:<20s} {3:>4d} | {1:<30s} | {0:s}'.format(
         message,
         func.co_name,
         os.path.split(func.co_filename)[1],
