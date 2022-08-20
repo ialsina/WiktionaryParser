@@ -4,7 +4,7 @@ from itertools import zip_longest
 from copy import copy
 from string import digits
 
-from wiktionaryparser.utils import WordData, Definition, RelatedWord, Debugger, Word
+from wiktionaryparser.utils import WordData, Definition, RelatedWord, TranslationSense, Debugger, Word
 from wiktionaryparser.logger import logger
 from wiktionaryparser._exceptions import *
 
@@ -341,10 +341,11 @@ class WiktionaryParser(object):
                         if related_word_index.startswith(definition_index):
                             def_obj.related_words.append(RelatedWord(relation_type, related_words))
                     found = False
-                    for translations_index, translations_dict in word_data['translations']:
+                    for translations_index, translations_list in word_data['translations']:
                         if definition_index <= translations_index < next_definition_index:
-                            def_obj.translations = translations_dict
-                            logger.debug('COND 1: {} {}'.format(translations_index, definition_index))
+                            for sense, translations_dict in translations_list:
+                                def_obj.translations.append(TranslationSense(sense, translations_dict))
+                                logger.debug('COND 1: {} {}'.format(translations_index, definition_index))
                     data_obj.definition_list.append(def_obj)
             self.DEBUG['data_obj'] = data_obj
             json_obj_list.append(data_obj.to_json())
@@ -436,6 +437,48 @@ def _get_senses(transl_header, info=None):
     return senses
 
 
+def _name_tag(item_tag, info=None):
+    if info is None:
+        info = {}
+    text = item_tag.text
+    info.update(text=text)
+    if not ":" in text:
+        raise MissingColonError(info=info)
+    lang, items_text = text.split(":", 1)
+    # logger.info("LANGUAGE:{}".format(lang))
+    if not info.get('language'):
+        info.update(language=lang)
+    else:
+        info.update(language='{}_{}'.format(info.get('language'), lang))
+    return lang, items_text, info
+
+
+def _separate_items(text, info=None):
+    if info is None:
+        info = {}
+
+    # Separate different items (by commas)
+    # Also, replace '[[a|b]]' for 'b' (gender notation)
+    items_list = text.split(', ')
+    for i, item in enumerate(items_list):
+        item = items_list[i]
+        if '[[' in item and ']]' in item and '|' in item:
+            items_list[i] = item.split('|')[1].replace(']]', '')
+
+    # If all ',()' chars are in text, go through list so as to ignore , between ()
+    if ',' in text and '(' in text and ')' in text:
+        items_new = []
+        cur_chain = []
+        counts = [0, 0]
+        for el in items_list:
+            counts[0] += el.count('(')
+            counts[1] += el.count(')')
+            cur_chain.append(el)
+            if counts[0] == counts[1]:
+                items_new.append(', '.join(cur_chain))
+                cur_chain = []
+        items_list = items_new
+    return items_list
 
 
 def _extract_language_item(lang_tag, info=None):
@@ -452,43 +495,8 @@ def _extract_language_item(lang_tag, info=None):
         tag.replace_with('[' + tag.text + ']')
 
     # Take text, and separate: lang & translation (by colon)
-    text = lang_tag.text
-    info.update(text=text)
-    if not ":" in text:
-        raise MissingColonError(info=info)
-
-    lang, items_text = text.split(":", 1)
-    # logger.info("LANGUAGE:{}".format(lang))
-    if not info.get('language'):
-        info.update(language=lang)
-    else:
-        info.update(language='{}_{}'.format(info.get('language'), lang))
-    # logger.info('LANGUAGE={}'.format(info.get('language')))
-    # text = [el.strip() for el in text]
-
-    # Separate different items (by commas)
-    # Also, replace '[[a|b]]' for 'b' (gender notation)
-    items_list = items_text.split(', ')
-    for i in range(len(items_list)):
-        item = items_list[i]
-        if '[[' in item and ']]' in item and '|' in item:
-            items_list[i] = item.split('|')[1].replace(']]', '')
-
-    # If all ',()' chars are in text, go through list so as to ignore , between ()
-    if ',' in items_text and '(' in items_text and ')' in items_text:
-        items_new = []
-        cur_chain = []
-        connecting = False
-        counts = [0, 0]
-        for el in items_list:
-            counts[0] += el.count('(')
-            counts[1] += el.count(')')
-            cur_chain.append(el)
-            if counts[0] == counts[1]:
-                items_new.append(', '.join(cur_chain))
-                cur_chain = []
-
-        items_list = items_new
+    lang, items_text, info = _name_tag(lang_tag, info)
+    items_list = _separate_items(items_text, info)
 
     if len(items_list) == 0:
         raise ZeroLengthListError(info=info)
