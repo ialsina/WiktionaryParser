@@ -14,12 +14,14 @@ class Word:
              ell] for ell in [el.get('definitions') for el in self._json_data]]
         self._meaning0 = [['{}'.format('\n'.join(elll.get('text'))) for elll in ell] for ell in
                           [el.get('definitions') for el in self._json_data]]
+        self._languages = []
         self._translation_lst = defaultdict(dict)
         self._translation_txt = defaultdict(str)
         self.items = []
         self._parse_translations()
 
     def _parse_translations(self):
+
         for element in self._json_data: # usually only one element
             for definition in element.get('definitions'):
                 part_of_speech = PARTS_OF_SPEECH_DICT[definition.get('partOfSpeech')]
