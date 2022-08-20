@@ -233,6 +233,12 @@ class Debugger:
         if kind == "append":
             self._items.update(**{attr: []})
 
+    def print(self, attr, pretty=False, *args, **kwargs):
+        output = self._get(attr)
+        if pretty:
+            output = output.prettify()
+        print(output, *args, **kwargs)
+
     def declared(self):
         return list(self._kinds.keys())
 

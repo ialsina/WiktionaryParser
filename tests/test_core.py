@@ -74,7 +74,7 @@ class TestParser(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         self.expected_results = {}
 
-        with open('tests/testOutput.json', 'r') as f:
+        with open('testOutput.json', 'r') as f:
             self.expected_results = json.load(f)
 
         super(TestParser, self).__init__(*args, **kwargs)
