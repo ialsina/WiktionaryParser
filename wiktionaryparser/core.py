@@ -565,10 +565,10 @@ def _extract_descriptions(lang_tag, info=None):
                     last_val = ''
                 if isinstance(last_val, list):
                     # to_update = last_val + [descr_tag.text] # Keep as list
-                    to_update = '; '.join(last_val + [descr_tag.text]) # Convert to text (semicolon)
+                    to_update = '; '.join(last_val + [descr_tag.text])  # Convert to text (semicolon)
                 elif isinstance(last_val, str):
                     # to_update = (last_val + '\n').replace('\n\n', '\n') + descr_tag.text # newlines
-                    to_update = last_val + '; ' + descr_tag.text # semicolons
+                    to_update = last_val + '; ' + descr_tag.text  # semicolons
                 logger.debug("Adding colonless description to LANG:{}".format(info.get('language')))
                 descriptions.update({last_key: to_update})
         else:
@@ -595,15 +595,27 @@ def _extract_languages(sense_tag, info=None):
     if len(tables) > 1:
         logger.warning("Multiple tables in WORD:{}, SENSE:{}".format(info.get('word'), info.get('sense')))
     elif len(tables) < 1:
-        raise ZeroTablesError(info,  show_html=True)
+        raise ZeroTablesError(info, show_html=True)
     tbodies = tables[0].find_all('tbody', recursive=False)
     if len(tbodies) > 1:
         raise MultipleTablesError(info)
-    tr = tbodies[0].find('tr')
+    # tr = tbodies[0].find_all('tr')
+    # for column_tag in tr.find_all('td', recursive=False):
+    #     if column_tag.text == '':
+    #         column_tag.extract()
+    # lang_tags = [lang_tag for column in tr.find_all('td', recursive=False) \
+    #              for lang_tag in column.find('ul', recursive=False).find_all('li', recursive=False)]
+    # if len(lang_tags) == 0:
+    #     raise EmptySenseError(info)
 
+    tr = tbodies[0].find('tr')
+    columns_lang = tr.find_all('td', attrs={'class': 'translations-cell'})
     try:
-        lang_tags = tr.find('li').parent.find_all('li', recursive=False)
+        lang_tags = [column.find('li').parent.find_all('li', recursive=False) for column in columns_lang]
+        lang_tags = [lang_tag for column in lang_tags for lang_tag in column] #flatten
     except AttributeError:
+        raise EmptySenseError(info)
+    if len(lang_tags) == 0:
         raise EmptySenseError(info)
 
     lang_dict = {}
@@ -620,6 +632,7 @@ def _extract_languages(sense_tag, info=None):
     logger.debug("Exit")
     return lang_dict
 
+
 def _extract_languages_safe(sense_tag, info=None):
     if info is None:
         info = {}
@@ -632,4 +645,3 @@ def _extract_languages_safe(sense_tag, info=None):
         logger.error(e)
         raise e
     return {}
-
