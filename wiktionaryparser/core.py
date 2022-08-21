@@ -5,7 +5,7 @@ from copy import copy
 from string import digits
 from collections import OrderedDict
 
-from wiktionaryparser.utils import WordData, Definition, RelatedWord, TranslationSense, Debugger, Word
+from wiktionaryparser.utils import WordData, Definition, RelatedWord, TranslationSense, Word, default_debugger
 from wiktionaryparser.logger import logger
 from wiktionaryparser._exceptions import *
 
@@ -27,6 +27,7 @@ RELATIONS = [
 
 class WiktionaryParser(object):
     def __init__(self, language="english"):
+        self.word_contents = None
         self.url = "https://en.wiktionary.org/wiki/{}?printable=yes"
         self.soup = None
         self.session = requests.Session()
@@ -37,7 +38,7 @@ class WiktionaryParser(object):
         self.PARTS_OF_SPEECH = copy(PARTS_OF_SPEECH)
         self.RELATIONS = copy(RELATIONS)
         self.INCLUDED_ITEMS = self.RELATIONS + self.PARTS_OF_SPEECH + ['etymology', 'pronunciation', 'translations']
-        self.DEBUG = _new_debugger()
+        self.DEBUG = default_debugger()
 
     def include_part_of_speech(self, part_of_speech):
         part_of_speech = part_of_speech.lower()
@@ -73,10 +74,12 @@ class WiktionaryParser(object):
         for tag in self.soup.find_all(True, {'class': unwanted_classes}):
             tag.extract()
 
-    def remove_digits(self, string):
+    @classmethod
+    def remove_digits(cls, string):
         return string.translate(str.maketrans('', '', digits)).strip()
 
-    def count_digits(self, string):
+    @classmethod
+    def count_digits(cls, string):
         return len(list(filter(str.isdigit, string)))
 
     def get_id_list(self, content_type):
@@ -553,6 +556,7 @@ def _extract_descriptions(lang_tag, info=None):
             try:
                 descriptions.update(_extract_language_item_safe(descr_tag, info=info, reraise=True))
             except MissingColonError:
+                to_update = None
                 if len(descriptions) > 0:
                     last_key = next(reversed(descriptions))
                     last_val = descriptions.get(last_key)
@@ -629,26 +633,3 @@ def _extract_languages_safe(sense_tag, info=None):
         raise e
     return {}
 
-
-def _new_debugger():
-    return Debugger(
-        word_contents='stop',
-        cur_transl_list='lock',
-        extract_languages='replace',
-        transl_tag='replace',
-        cur_transl_tag='replace',
-        last_transl_tag='replace',
-        cur_transl_senses='replace',
-        translations_list='replace',
-        parse_translations='lock',
-        map_to_object_input='replace',
-        map_to_object='replace',
-        json_obj_list='replace',
-        word_data0='replace',
-        word_data='replace',
-        get_word_data='replace',
-        translations_id_list='lock',
-        transl1='lock',
-        transl2='lock',
-        data_obj='lock',
-    )

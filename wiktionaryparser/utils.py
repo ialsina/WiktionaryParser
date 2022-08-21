@@ -296,3 +296,26 @@ class Debugger:
 
     def initialized(self):
         return list(self._items.keys())
+
+def default_debugger():
+    return Debugger(
+        word_contents='stop',
+        cur_transl_list='lock',
+        extract_languages='replace',
+        transl_tag='replace',
+        cur_transl_tag='replace',
+        last_transl_tag='replace',
+        cur_transl_senses='replace',
+        translations_list='replace',
+        parse_translations='lock',
+        map_to_object_input='replace',
+        map_to_object='replace',
+        json_obj_list='replace',
+        word_data0='replace',
+        word_data='replace',
+        get_word_data='replace',
+        translations_id_list='lock',
+        transl1='lock',
+        transl2='lock',
+        data_obj='lock',
+    )
