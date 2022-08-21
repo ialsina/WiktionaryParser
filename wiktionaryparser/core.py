@@ -360,7 +360,7 @@ class WiktionaryParser(object):
 
         return json_obj_list
 
-    def fetch(self, word, language=None, old_id=None, wordclass=True):
+    def fetch(self, word, language=None, old_id=None, return_word_class=True):
         language = self.language if not language else language
         response = self.session.get(self.url.format(word), params={'oldid': old_id})
         self.soup = BeautifulSoup(response.text.replace('>\n<', '><'), 'html.parser')
@@ -368,7 +368,7 @@ class WiktionaryParser(object):
         self.clean_html()
         self.get_word_contents(language)
         word_data = self.get_word_data(language)
-        if not wordclass:
+        if not return_word_class:
             return word_data
         else:
             return Word(word_data, self.current_word)
