@@ -1,3 +1,5 @@
+class EmptyWordContents(Exception)
+
 class TranslationParsingError(Exception):
     reason = "unknown"
 
@@ -32,8 +34,8 @@ class TranslationParsingError(Exception):
             msg += 'I'
         msg += 't is impossible to extract translation. ' \
                'REASON:"{}"'.format(self.reason)
-        if self.show_html and self.info.html:
-            msg += '\n\t' + self.info.html.prettify()
+        if self.show_html and self.info.get('html'):
+            msg += '\n\t' + self.info['html'].prettify()
         return msg
 
 
