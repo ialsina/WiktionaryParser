@@ -13,8 +13,8 @@ from wiktionaryparser._exceptions import *
 # TODO split file for translations parsing
 # TODO implement see also
 # TODO change to language-specific via inheritance
-# TODO swich towards Parser/Word distinction. Separation "factory/product"
-
+# TODO switch towards Parser/Word distinction. Separation "factory/product"
+# TODO fetch in two steps: browse and fetch -> "new fetch" returns and cleans
 
 class WiktionaryParser(object):
 
@@ -53,8 +53,8 @@ class WiktionaryParser(object):
 
     @property
     def ALL_TERMS(self):
-        return self._PARTS_OF_SPEECH + self._RELATIONS + self._ADDITIONAL_ITEMS + \
-            self._included_parts_of_speech + self._included_relations
+        return set().union(self._PARTS_OF_SPEECH, self._RELATIONS, self._ADDITIONAL_ITEMS, \
+            self._included_parts_of_speech, self._included_relations)
 
     def include_part_of_speech(self, part_of_speech):
         self._included_parts_of_speech.add(part_of_speech.lower())
@@ -125,7 +125,7 @@ class WiktionaryParser(object):
             for content in contents:
                 index = content.find_previous().text
                 content_text = self.remove_digits(content.text.lower())
-                if index.startswith(start_index) and content_text in self.INCLUDED_ITEMS:
+                if index.startswith(start_index) and content_text in self.ALL_TERMS:
                     word_contents.append(content)
             self.word_contents = word_contents
             self.DEBUG['word_contents'] = word_contents
@@ -191,13 +191,23 @@ class WiktionaryParser(object):
                     if definition_tag.text.strip():
                         definition_text.append(definition_tag.text.strip())
                 if definition_tag.name in ['ol', 'ul']:
-                    for element in definition_tag.find_all('li', recursive=False):
+                    # Changed to recursive=True to add elements of embedded lists
+                    # Originally was set to recursive=False because such elements were eliminated in
+                    # parse_examples() (see explanation there of excluded code)
+                    # TODO Change so that the elements in embedded lists (see comment above) aren't included in the same level
+                    for element in definition_tag.find_all('li', recursive=True):
                         if element.text:
                             definition_text.append(element.text.strip())
+                self.DEBUG['definitions_content'] = (def_index, def_id, def_type, definition_tag)
             if def_type == 'definitions':
                 def_type = ''
             definition_list.append((def_index, definition_text, def_type))
         return definition_list
+
+    # TODO Add parse_additional information
+    # This will look for further h4 tags under the one of the definition, such as:
+    # declension, conjugation, synonyms, antonyms, derived terms, etc.
+    # and will add them in a new dict entry: info (for example)
 
     def parse_examples(self):
         definition_id_list = self.ids.get('definitions')
@@ -215,8 +225,11 @@ class WiktionaryParser(object):
                         examples.append(example_text)
                     element.clear()
                 example_list.append((def_index, examples, def_type))
-                for quot_list in table.find_all(['ul', 'ol']):
-                    quot_list.clear()
+                # TODO Figure out original function of the commented code below
+                #  I am not sure why this was here
+                # Commented because was losing some elements in definitions (ex. in german 'Räuber')
+                # for quot_list in table.find_all(['ul', 'ol']):
+                #    quot_list.clear()
                 table = table.find_next_sibling()
         return example_list
 
@@ -363,6 +376,7 @@ class WiktionaryParser(object):
         self.current_word = word
         self.clean_html()
         self.set_word_contents()
+        self.set_ids()
         word_data = self.get_word_data()
         if not return_word_class:
             return word_data

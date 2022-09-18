@@ -1,4 +1,5 @@
-class EmptyWordContents(Exception)
+class EmptyWordContents(Exception):
+    pass
 
 class TranslationParsingError(Exception):
     reason = "unknown"

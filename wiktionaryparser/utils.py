@@ -242,8 +242,9 @@ class Debugger:
     DEFAULT_KIND = "replace"
 
     def __init__(self, default_kind = "replace", **kwargs):
+        assert all(val in self.KINDS for val in kwargs.values())
         self._kinds = kwargs
-        self._items = {}
+        self._items = {key: [] for key, val in kwargs.items() if val == "append"}
         self._default_kind = default_kind
 
     def __setitem__(self, attr, val):
@@ -255,7 +256,7 @@ class Debugger:
             if attr not in self.initialized():
                 self._set(attr, val)
         elif kind == "append":
-            assert attr in self
+            assert attr in self.declared()
             assert isinstance(self._get(attr), list)
             self._get(attr).append(val)
         elif kind == "stop":
@@ -270,6 +271,8 @@ class Debugger:
         return self._get(attr)
 
     def __contains__(self, item):
+        print(item)
+        print(self.declared())
         return item in self.delcared()
 
     def _set(self, attr, val):
@@ -318,4 +321,5 @@ def default_debugger():
         transl1='lock',
         transl2='lock',
         data_obj='lock',
+        definitions_content='append',
     )
