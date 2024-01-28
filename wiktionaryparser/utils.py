@@ -1,54 +1,65 @@
+from collections import defaultdict
 from wiktionaryparser.dicts import PARTS_OF_SPEECH_DICT
 
 class Word:
-    def __init__(self, data, name=None):
-        self.data = data
+    def __init__(self, json_data, name=None):
+        self._json_data = json_data
         self.name = name
         self.structure = [['{}'.format(PARTS_OF_SPEECH_DICT[elll.get('partOfSpeech')]) for elll in ell] for ell in
-                          [el.get('definitions') for el in self.data]]
-        self._pronunciation = [el.get('pronunciations').get('text') for el in self.data]
-        self._etymology = [el.get('etimology') for el in self.data]
+                          [el.get('definitions') for el in self._json_data]]
+        self._pronunciation = [el.get('pronunciations').get('text') for el in self._json_data]
+        self._etymology = [el.get('etimology') for el in self._json_data]
         self._meaning = [
             ['({}) {}'.format(PARTS_OF_SPEECH_DICT[elll.get('partOfSpeech')], '\n'.join(elll.get('text'))) for elll in
-             ell] for ell in [el.get('definitions') for el in self.data]]
+             ell] for ell in [el.get('definitions') for el in self._json_data]]
         self._meaning0 = [['{}'.format('\n'.join(elll.get('text'))) for elll in ell] for ell in
-                          [el.get('definitions') for el in self.data]]
-        self._translation_lst = {}
-        self._translation_txt = {}
+                          [el.get('definitions') for el in self._json_data]]
+        self._translation_lst = defaultdict(dict)
+        self._translation_txt = defaultdict(str)
         self.items = []
         self._parse_translations()
 
     def _parse_translations(self):
-        for el in self.data:
-            for el2 in el.get('definitions'):
-                pofs = PARTS_OF_SPEECH_DICT[el2.get('partOfSpeech')]
-                trns = el2.get('translations')
-                for el3 in trns:
-                    sense = el3[0]
-                    langs_dict = el3[1]
-                    self.items.append(list(langs_dict.items()))
-                    for k, v in langs_dict.items():
-                        if isinstance(v, dict):
-                            for kk, vv in v.items():
-                                dialect = k + '-' + kk.replace(k + ' ', '').replace(' ' + k, '')
-                                self._translation_lst[dialect] = self._translation_lst.get(dialect, {})
-                                self._translation_lst[dialect]['{} ({})'.format(sense, pofs)] = ', '.join(
-                                    vv) if isinstance(vv, list) else vv
-                                self._translation_txt[dialect] = self._translation_txt.get(dialect, '')
-                                self._translation_txt[dialect] += '\n({}) {}: {}'.format(pofs, sense,
-                                                                                         ', '.join(vv) if isinstance(vv,
-                                                                                                                     list) else vv)
+        for element in self._json_data: # usually only one element
+            for definition in element.get('definitions'):
+                part_of_speech = PARTS_OF_SPEECH_DICT[definition.get('partOfSpeech')]
+                translations = definition.get('translations')
+                for sense in translations:
+                    sense_value = sense.get('sense')
+                    languages = sense.get('translations')
+                    self.items.append(list(languages.items()))
+                    for lang, lang_value in languages.items():
+                        if isinstance(lang_value, dict):
+                            for descr, descr_value in lang_value.items():
+                                descr_without_lang = descr.replace(lang + ' ', '').replace(' ' + lang, '')
+                                lang_descr = lang + '-' + descr_without_lang
+                                self._update_single_entry(lang_descr, part_of_speech, sense_value, descr_value)
                         else:
-                            self._translation_lst[k] = self._translation_lst.get(k, {})
-                            self._translation_lst[k]['{} ({})'.format(sense, pofs)] = ', '.join(v) if isinstance(v,
-                                                                                                                 list) else v
-                            self._translation_txt[k] = self._translation_txt.get(k, '')
-                            self._translation_txt[k] += '\n({}) {}: {}'.format(pofs, sense,
-                                                                               ', '.join(v) if isinstance(v,
-                                                                                                          list) else v)
-        for k in self._translation_txt:
-            self._translation_txt[k] = self._translation_txt[k].replace('\n', '', 1) + '\n'
+                            self._update_single_entry(lang, part_of_speech, sense_value, lang_value)
+        for key in self._translation_txt:
+            self._translation_txt[key] = self._translation_txt[key].replace('\n', '', 1) + '\n'
         self._languages = sorted(list(self._translation_txt.keys()))
+
+    def _update_single_entry(self, key, part_of_speech, sense, value):
+        self._translation_lst[key][self._dictionary_entry(part_of_speech, sense)] = self._force_comma_str(value)
+        self._translation_txt[key] += '\n' + self._dictionary_entry(part_of_speech, sense, value)
+
+
+    @classmethod
+    def _dictionary_entry(cls, part_of_speech, sense, value=None):
+        if value:
+            return '({}) {}: {}'.format(part_of_speech, sense, cls._force_comma_str(value))
+        else:
+            return '({}) {}'.format(part_of_speech, sense)
+
+    @classmethod
+    def _force_comma_str(cls, value):
+        if isinstance(value, list):
+            return ', '.join(value)
+        elif isinstance(value, str):
+            return value
+        else:
+            raise TypeError('Wrong type')
 
     def pronunciation(self):
         raise NotImplemented
@@ -142,9 +153,9 @@ class Definition(object):
                  related_words = None, example_uses = None, translations = None):
         self.part_of_speech = part_of_speech if part_of_speech else ''
         self.text = text if text else ''
-        self.related_words = related_words if related_words else []
+        self._related_words = related_words if related_words else []
         self.example_uses = example_uses if example_uses else []
-        self.translations = translations if translations else []
+        self._translations = translations if translations else []
 
     @property
     def related_words(self):
@@ -163,13 +174,40 @@ class Definition(object):
                     raise TypeError('Invalid type for relatedWord')
             self._related_words = related_words
 
+    @property
+    def translations(self):
+        return self._translations
+
+    @translations.setter
+    def translations(self, translations):
+        self._translations = []
+        if translations is None:
+            return
+        elif not isinstance(translations, list):
+            raise TypeError('Invalid type for translation')
+        else:
+            for element in translations:
+                translation_sense = element
+                if not isinstance(element, TranslationSense):
+                    if isinstance(element, tuple):
+                        if len(element) == 2:
+                            if isinstance(element[0], str) and isinstance(element[1], dict):
+                                translation_sense = TranslationSense(element[0], element[1])
+                            else:
+                                raise TypeError('Invalid translation tuple formatting')
+                        else:
+                            raise TypeError('Invalid translation tuple formatting')
+                    else:
+                        raise TypeError('Invalid type for translation')
+                self._translations.append(translation_sense)
+
     def to_json(self):
         return {
             'partOfSpeech': self.part_of_speech,
             'text': self.text,
             'relatedWords': [related_word.to_json() for related_word in self.related_words],
             'examples': self.example_uses,
-            'translations': self.translations
+            'translations': [sense.to_json() for sense in self.translations],
         }
 
 
@@ -182,6 +220,18 @@ class RelatedWord(object):
         return {
             'relationshipType': self.relationship_type,
             'words': self.words
+        }
+
+
+class TranslationSense(object):
+    def __init__(self, sense=None, translation_dict=None):
+        self.sense = sense if sense else ''
+        self.translations = translation_dict if translation_dict else {}
+
+    def to_json(self):
+        return {
+            'sense': self.sense,
+            'translations': self.translations
         }
 
 
