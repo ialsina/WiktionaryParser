@@ -269,26 +269,23 @@ class WiktionaryParser(object):
         translations_id_list = self.get_id_list('translations')
         translations_list = []
         self.DEBUG['translations_id_list'] = translations_id_list
+        info = dict(word=self.current_word)
         for translations_index, translations_id, _ in translations_id_list:
             cur_translation_list = []
             span_tag = self.soup.find_all('span', {'id': translations_id})[0]
             self.DEBUG['transl1'] = span_tag
-            transl_tag = span_tag.parent.find_next_sibling()
-            cur_transl_senses = _get_senses(transl_tag)
-            self.DEBUG['transl_tag'] = transl_tag
+            cur_transl_senses = _get_senses(span_tag, info=info)
+            self.DEBUG['cur_transl_senses'] = cur_transl_senses
             self.DEBUG['last_transl_tag'] = cur_transl_senses[-1]
             # If translations are somewhere else, go look for them
             if len(cur_transl_senses) == 1 and '/translations' in cur_transl_senses[0][1].text:
                 span_tag = _second_lookup(self.url, cur_transl_senses)
                 self.DEBUG['transl2'] = span_tag
-                cur_transl_senses = _get_senses(span_tag.parent.find_next_sibling().find_next_sibling())
+                cur_transl_senses = _get_senses(span_tag, info=info)
+                self.DEBUG['cur_transl_senses'] = cur_transl_senses
             for (sense, sense_tag) in cur_transl_senses:
-                try:
-                    cur_translation_list.append((sense, _extract_languages(sense_tag, word=self.current_word)))
-                except TranslationParsingError as e:
-                    logger.warning(e)
-                except Exception as e:
-                    logger.error(e)
+                info.update(sense=sense)
+                cur_translation_list.append((sense, _extract_languages_safe(sense_tag, info=info)))
                 self.DEBUG['extract_languages'] = cur_translation_list
             self.DEBUG['cur_transl_list'] = cur_translation_list
 
@@ -394,7 +391,7 @@ def _second_lookup(url, transl_senses):
     return soup2.find('span', {'id': url2.split('#')[1]})
 
 
-def _get_senses(transl_tag):
+def _get_senses(transl_header, info=None):
     """Builds and returns a dictionary of translation siblings (bs4.element.Tag),
     i.e. one for each of the senses of a word.
     Output format:
@@ -403,18 +400,27 @@ def _get_senses(transl_tag):
             (sense2, bs4.element.Tag with all the languages),
         }
     """
-    sense_tag = transl_tag
+    logger.debug("Enter")
+    if info is None:
+        info = {}
+    sense_tag = transl_header.parent.find_next_sibling()
+
+    if 'class' not in sense_tag.attrs:
+        raise SenseLocationError(info)
+    if "NavFrame" not in sense_tag.attrs['class']:
+        raise SenseLocationError(info)
+
     senses = []
     while True:
         # Check if the table of senses is over
         if sense_tag is None:
             break
-        try:
-            sense_tag_name = sense_tag.name
-        except:
+        if sense_tag.name in ['h3', 'h4', 'h5']:
             break
-        if sense_tag_name in ['h3', 'h4', 'h5']:
-            break
+        if 'class' in sense_tag.attrs:
+            if "NavFrame" not in sense_tag.attrs['class']:
+                break
+        # Assume we are in a sense
         # get the sense name
         sense_header = sense_tag.find('div')
         if sense_header is None:
@@ -423,11 +429,18 @@ def _get_senses(transl_tag):
             sense = sense_header.text
         # add to dictionary
         senses.append((sense, sense_tag))
+        # Find next sibling
         sense_tag = sense_tag.find_next_sibling()
+    # logger.info("Senses: {}".format('; '.join([senses[i][0] for i in range(len(senses))])))
+    logger.debug("Exit")
     return senses
 
 
-def _extract_language_item(lang_tag, word=None):
+
+
+def _extract_language_item(lang_tag, info=None):
+    if info is None:
+        info = {}
     logger.debug("Enter")
     unwanted_classes = ['tpos']
     enclose_classes = ['gender']
@@ -440,10 +453,18 @@ def _extract_language_item(lang_tag, word=None):
 
     # Take text, and separate: lang & translation (by colon)
     text = lang_tag.text
+    info.update(text=text)
     if not ":" in text:
-        raise MissingColonError(word, text)
-    key, items_text = text.split(":", 1)
-    #text = [el.strip() for el in text]
+        raise MissingColonError(info=info)
+
+    lang, items_text = text.split(":", 1)
+    # logger.info("LANGUAGE:{}".format(lang))
+    if not info.get('language'):
+        info.update(language=lang)
+    else:
+        info.update(language='{}_{}'.format(info.get('language'), lang))
+    # logger.info('LANGUAGE={}'.format(info.get('language')))
+    # text = [el.strip() for el in text]
 
     # Separate different items (by commas)
     # Also, replace '[[a|b]]' for 'b' (gender notation)
@@ -469,57 +490,112 @@ def _extract_language_item(lang_tag, word=None):
 
         items_list = items_new
 
+    if len(items_list) == 0:
+        raise ZeroLengthListError(info=info)
+
     # Return a dict whose value is the list or its only element
     logger.debug("Exit")
-    return {key.lower(): items_list if len(items_list) > 1 else items_list[0]}
+    return {lang.lower(): items_list if len(items_list) > 1 else items_list[0]}
 
 
-def _extract_language_item_safe(tag, word=None):
+def _extract_language_item_safe(tag, info=None):
+    if info is None:
+        info = {}
     try:
-        new_items = _extract_language_item(tag, word=word)
+        new_items = _extract_language_item(tag, info=info)
     except TranslationParsingError as e:
         new_items = {}
         logger.warning(e)
-    except Exception as e:
-        new_items = {}
-        logger.error(e)
     return new_items
 
 
-def _extract_languages(sense_tag, word=None):
+def _extract_descriptions(lang_tag, info=None):
+    if info is None:
+        info = {}
+
     logger.debug("Enter")
-    lang_tags = sense_tag.find_all('li')
+    lang = lang_tag.text.split(':')[0]
+    info.update(language=lang)
+    descriptions = {}
+    main_lang_tag = copy(lang_tag)
+    main_lang_tag.find('dl').extract()
+
+    if ':' not in main_lang_tag.text:
+        raise MissingColonError(info=info)
+
+    if main_lang_tag.text.replace('\n', '').split(':')[1] != '':
+        # There is still a main entry
+        logger.debug('SENDING {}'.format(main_lang_tag))
+        descriptions.update(_extract_language_item_safe(main_lang_tag, info=info))
+
+    # For each dialect (description)
+    for descr_tag in lang_tag.find_all('dd'):
+        if not descr_tag.find_all('dl'):
+            descr = descr_tag.text
+            info.update(language=lang)
+            logger.debug('LANG: {}, NOT dl: {}'.format(lang, descr))
+            descriptions.update(_extract_language_item_safe(descr_tag, info=info))
+        else:
+            logger.debug('SPECIAL CASE. LANG: {}, YES dl: {}'.format(lang, descr_tag))
+            for sub_descr_tag in descr_tag.find_all('dl'):
+                # sub_descr = sub_descr_tag.text
+                # info.update(language='{}_{}_{}'.format(lang, descr, sub_descr))
+                descriptions.update(_extract_language_item_safe(sub_descr_tag, info=info))
+                sub_descr_tag.extract()
+            # info.update(language='{}_{}_sub-descr-extracted'.format(lang, descr_tag))
+            descriptions.update(_extract_language_item_safe(descr_tag, info=info))
+
+    logger.debug("Exit")
+    return lang, descriptions
+
+
+def _extract_languages(sense_tag, info=None):
+    if info is None:
+        info = {}
+    logger.debug("Enter")
+    # logger.info("{:=<80}".format("SENSE:{}".format(info.get("sense"))))
+    tables = sense_tag.find_all('table', recursive=True)
+    info.update(html=sense_tag)
+    if len(tables) > 1:
+        logger.warning("Multiple tables in WORD:{}, SENSE:{}".format(info.get('word'), info.get('sense')))
+    elif len(tables) < 1:
+        raise ZeroTablesError(info,  show_html=True)
+    tbodies = tables[0].find_all('tbody', recursive=False)
+    if len(tbodies) > 1:
+        raise MultipleTablesError(info)
+    tr = tbodies[0].find('tr')
+
+    try:
+        lang_tags = tr.find('li').parent.find_all('li', recursive=False)
+    except AttributeError:
+        raise EmptySenseError(info)
+
     lang_dict = {}
     for lang_tag in lang_tags:
         if not lang_tag.find_all('dl'):
-            # There are no dialects (subitems in a language)
-            lang_dict.update(_extract_language_item_safe(lang_tag, word=word))
+            # There are no dialects (sub-items in a language)
+            info.update(language=lang_tag.text)
+            lang_dict.update(_extract_language_item_safe(lang_tag, info=info))
         else:
             # There are dialects
-            lang = lang_tag.text.split(':')[0]
-            descriptions_dict = {}
+            lang, descriptions = _extract_descriptions(lang_tag, info=info)
 
-            temp = copy(lang_tag)
-            temp.find('dl').extract()
-
-            if temp.text.replace('\n', '').split(':')[1] != '':
-                # There is still a main entry
-                logger.debug('SENDING {}'.format(temp))
-                descriptions_dict.update(_extract_language_item_safe(temp, word=word))
-
-            for descr in lang_tag.find_all('dd'):
-                if not descr.find_all('dl'):
-                    logger.debug('LANG: {}, NOT dl: {}'.format(lang, descr))
-                    descriptions_dict.update(_extract_language_item_safe(descr, word=word))
-                else:
-                    logger.debug('SPECIAL CASE. LANG: {}, YES dl: {}'.format(lang, descr))
-                    for descr2 in descr.find_all('dl'):
-                        descriptions_dict.update(_extract_language_item_safe(descr2, word=word))
-                        descr2.extract()
-                    descriptions_dict.update(_extract_language_item_safe(descr, word=word))
-            lang_dict[lang.lower()] = descriptions_dict
+            lang_dict[lang.lower()] = descriptions
     logger.debug("Exit")
     return lang_dict
+
+def _extract_languages_safe(sense_tag, info=None):
+    if info is None:
+        info = {}
+    logger.debug("Enter")
+    try:
+        return _extract_languages(sense_tag, info=info)
+    except TranslationParsingError as e:
+        logger.warning(e)
+    except Exception as e:
+        logger.error(e)
+        raise e
+    return {}
 
 
 def _new_debugger():
@@ -530,6 +606,7 @@ def _new_debugger():
         transl_tag='replace',
         cur_transl_tag='replace',
         last_transl_tag='replace',
+        cur_transl_senses='replace',
         translations_list='replace',
         parse_translations='lock',
         map_to_object_input='replace',
