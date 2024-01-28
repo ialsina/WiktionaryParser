@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from itertools import zip_longest
 from copy import copy
 from string import digits
+from collections import OrderedDict
 
 from wiktionaryparser.utils import WordData, Definition, RelatedWord, TranslationSense, Debugger, Word
 from wiktionaryparser.logger import logger
@@ -506,11 +507,18 @@ def _extract_language_item(lang_tag, info=None):
     return {lang.lower(): items_list if len(items_list) > 1 else items_list[0]}
 
 
-def _extract_language_item_safe(tag, info=None):
+def _extract_language_item_safe(tag, info=None, reraise=False):
     if info is None:
         info = {}
     try:
         new_items = _extract_language_item(tag, info=info)
+    except MissingColonError as e:
+        new_items = {}
+        if reraise:
+            # Reraise exception because is caught later on with some functionality
+            raise e
+        else:
+            logger.warning(e)
     except TranslationParsingError as e:
         new_items = {}
         logger.warning(e)
@@ -524,7 +532,7 @@ def _extract_descriptions(lang_tag, info=None):
     logger.debug("Enter")
     lang = lang_tag.text.split(':')[0]
     info.update(language=lang)
-    descriptions = {}
+    descriptions = OrderedDict()
     main_lang_tag = copy(lang_tag)
     main_lang_tag.find('dl').extract()
 
@@ -542,7 +550,23 @@ def _extract_descriptions(lang_tag, info=None):
             descr = descr_tag.text
             info.update(language=lang)
             logger.debug('LANG: {}, NOT dl: {}'.format(lang, descr))
-            descriptions.update(_extract_language_item_safe(descr_tag, info=info))
+            try:
+                descriptions.update(_extract_language_item_safe(descr_tag, info=info, reraise=True))
+            except MissingColonError:
+                if len(descriptions) > 0:
+                    last_key = next(reversed(descriptions))
+                    last_val = descriptions.get(last_key)
+                else:
+                    last_key = lang.lower()
+                    last_val = ''
+                if isinstance(last_val, list):
+                    # to_update = last_val + [descr_tag.text] # Keep as list
+                    to_update = '; '.join(last_val + [descr_tag.text]) # Convert to text (semicolon)
+                elif isinstance(last_val, str):
+                    # to_update = (last_val + '\n').replace('\n\n', '\n') + descr_tag.text # newlines
+                    to_update = last_val + '; ' + descr_tag.text # semicolons
+                logger.debug("Adding colonless description to LANG:{}".format(info.get('language')))
+                descriptions.update({last_key: to_update})
         else:
             logger.debug('SPECIAL CASE. LANG: {}, YES dl: {}'.format(lang, descr_tag))
             for sub_descr_tag in descr_tag.find_all('dl'):
@@ -554,7 +578,7 @@ def _extract_descriptions(lang_tag, info=None):
             descriptions.update(_extract_language_item_safe(descr_tag, info=info))
 
     logger.debug("Exit")
-    return lang, descriptions
+    return lang, dict(descriptions)
 
 
 def _extract_languages(sense_tag, info=None):
