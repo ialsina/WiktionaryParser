@@ -16,6 +16,6 @@ parser = WiktionaryParser()
 
 for target in targets:
     logger.info("Fetching target: {}".format(target))
-    word = parser.fetch(target, language='english', wordclass=True)
+    word = parser.fetch(target, language='english', return_word_class=True)
 
     words.append(word)
