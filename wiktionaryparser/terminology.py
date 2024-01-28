@@ -13,6 +13,10 @@ TERMINOLOGY_RELATIONS = [
     "coordinate terms",
 ]
 
+TERMINOLOGY_INFLECTIONS = [
+    'conjugation', 'declension',
+]
+
 TERMINOLOGY_ADDITIONAL = [
-    'etymology', 'pronunciation', 'translations'
+    'etymology', 'pronunciation', 'translations',
 ]

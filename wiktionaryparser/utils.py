@@ -152,11 +152,13 @@ class WordData(object):
 
 class Definition(object):
     def __init__(self, part_of_speech = None, text = None,
-                 related_words = None, example_uses = None, translations = None):
+                 related_words = None, example_uses = None,
+                 inflections = None, translations = None):
         self.part_of_speech = part_of_speech if part_of_speech else ''
         self.text = text if text else ''
         self._related_words = related_words if related_words else []
         self.example_uses = example_uses if example_uses else []
+        self._inflections = inflections if inflections else []
         self._translations = translations if translations else []
 
     @property
@@ -175,6 +177,24 @@ class Definition(object):
                 if not isinstance(element, RelatedWord):
                     raise TypeError('Invalid type for relatedWord')
             self._related_words = related_words
+
+    @property
+    def inflections(self):
+        return self._inflections
+
+    @inflections.setter
+    def inflections(self, inflections):
+        if inflections is None:
+            self._inflections = []
+            return
+        elif not isinstance(inflections, list):
+            raise TypeError('Invalid type for inflection')
+        else:
+            for element in inflections:
+                if not isinstance(element, Inflection):
+                    raise TypeError('Invalid type for inflection')
+            self._inflections = inflections
+
 
     @property
     def translations(self):
@@ -209,6 +229,7 @@ class Definition(object):
             'text': self.text,
             'relatedWords': [related_word.to_json() for related_word in self.related_words],
             'examples': self.example_uses,
+            'inflections': [inflection.to_json() for inflection in self.inflections],
             'translations': [sense.to_json() for sense in self.translations],
         }
 
@@ -221,7 +242,18 @@ class RelatedWord(object):
     def to_json(self):
         return {
             'relationshipType': self.relationship_type,
-            'words': self.words
+            'words': self.words,
+        }
+
+class Inflection(object):
+    def __init__(self, inflection_type=None, table=None):
+        self.inflection_type = inflection_type if inflection_type else ''
+        self.table = table if table else ''
+
+    def to_json(self):
+        return {
+            'inflectionType': self.inflection_type,
+            'table': self.table,
         }
 
 
@@ -322,4 +354,6 @@ def default_debugger():
         transl2='lock',
         data_obj='lock',
         definitions_content='append',
+        first_additional='lock',
+        sequence_additional='append',
     )

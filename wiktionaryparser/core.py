@@ -3,12 +3,13 @@ from bs4 import BeautifulSoup
 from itertools import zip_longest
 from copy import copy
 from string import digits
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
-from wiktionaryparser.utils import WordData, Definition, RelatedWord, TranslationSense, Word, default_debugger
+from wiktionaryparser.utils import WordData, Definition, RelatedWord, Inflection, TranslationSense, Word, default_debugger
 from wiktionaryparser.logger import logger
-from wiktionaryparser.terminology import TERMINOLOGY_PARTS_OF_SPEECH, TERMINOLOGY_RELATIONS, TERMINOLOGY_ADDITIONAL
+from wiktionaryparser.terminology import *
 from wiktionaryparser._exceptions import *
+
 
 # TODO split file for translations parsing
 # TODO implement see also
@@ -17,9 +18,9 @@ from wiktionaryparser._exceptions import *
 # TODO fetch in two steps: browse and fetch -> "new fetch" returns and cleans
 
 class WiktionaryParser(object):
-
     _PARTS_OF_SPEECH = set(TERMINOLOGY_PARTS_OF_SPEECH)
     _RELATIONS = set(TERMINOLOGY_RELATIONS)
+    _INFLECTIONS = set(TERMINOLOGY_INFLECTIONS)
     _ADDITIONAL_ITEMS = set(TERMINOLOGY_ADDITIONAL)
 
     def __init__(self, language="english"):
@@ -52,9 +53,13 @@ class WiktionaryParser(object):
         return self._RELATIONS
 
     @property
+    def INFLECTIONS(self):
+        return self._INFLECTIONS
+
+    @property
     def ALL_TERMS(self):
-        return set().union(self._PARTS_OF_SPEECH, self._RELATIONS, self._ADDITIONAL_ITEMS, \
-            self._included_parts_of_speech, self._included_relations)
+        return set().union(self._PARTS_OF_SPEECH, self._RELATIONS, self._INFLECTIONS, self._ADDITIONAL_ITEMS,
+                           self._included_parts_of_speech, self._included_relations)
 
     def include_part_of_speech(self, part_of_speech):
         self._included_parts_of_speech.add(part_of_speech.lower())
@@ -88,6 +93,7 @@ class WiktionaryParser(object):
             'definitions': self.PARTS_OF_SPEECH,
             'related': self.RELATIONS,
             'translations': ['translations'],
+            'inflections': self.INFLECTIONS
         }
         if self.language == 'chinese':
             checklist_by_type['definitions'] += self.current_word
@@ -97,7 +103,7 @@ class WiktionaryParser(object):
 
         for content_type, checklist in checklist_by_type.items():
             if len(word_contents) == 0:
-                ids = [('1', x.title(), x) for x in checklist if self.soup.find('span', {'id': x.title()})]
+                ids_current_type = [('1', x.title(), x) for x in checklist if self.soup.find('span', {'id': x.title()})]
             else:
                 ids_current_type = []
                 for content_tag in word_contents:
@@ -108,7 +114,6 @@ class WiktionaryParser(object):
                         ids_current_type.append((content_index, content_id, text_to_check))
             ids[content_type] = ids_current_type
         self.ids = ids
-
 
     def set_word_contents(self):
         contents = self.soup.find_all('span', {'class': 'toctext'})
@@ -137,6 +142,7 @@ class WiktionaryParser(object):
             'definitions': self.parse_definitions(),
             'etymologies': self.parse_etymologies(),
             'related': self.parse_related_words(),
+            'inflections': self.parse_inflections(),
             'pronunciations': self.parse_pronunciations(),
             'translations': self.parse_translations(),
         }
@@ -191,13 +197,24 @@ class WiktionaryParser(object):
                     if definition_tag.text.strip():
                         definition_text.append(definition_tag.text.strip())
                 if definition_tag.name in ['ol', 'ul']:
-                    # Changed to recursive=True to add elements of embedded lists
+                    # Changed to recursive=False to add elements of embedded lists
                     # Originally was set to recursive=False because such elements were eliminated in
                     # parse_examples() (see explanation there of excluded code)
                     # TODO Change so that the elements in embedded lists (see comment above) aren't included in the same level
-                    for element in definition_tag.find_all('li', recursive=True):
-                        if element.text:
-                            definition_text.append(element.text.strip())
+                    for _element in definition_tag.find_all('li', recursive=False):
+                        element = copy(_element)
+                        subelement_list = []
+                        # Check for elements of embedded lists
+                        for subelement in element.find_all('li', recursive=True):
+                            if subelement.text.strip():
+                                subelement_list.append(subelement.text.strip())
+                            subelement.extract()
+                        if subelement_list:
+                            to_append = (element.text.strip(), subelement_list)
+                        else:
+                            to_append = element.text.strip()
+                        if to_append:
+                            definition_text.append(to_append)
                 self.DEBUG['definitions_content'] = (def_index, def_id, def_type, definition_tag)
             if def_type == 'definitions':
                 def_type = ''
@@ -208,6 +225,82 @@ class WiktionaryParser(object):
     # This will look for further h4 tags under the one of the definition, such as:
     # declension, conjugation, synonyms, antonyms, derived terms, etc.
     # and will add them in a new dict entry: info (for example)
+
+    def parse_additional_information(self):
+        definition_id_list = self.ids.get('definitions')
+        related_id_list = [el[1] for el in self.ids.get('related')]
+        additional_information_list = []
+        info_tag = None
+        for def_index, def_id, _ in definition_id_list:
+            additional_information = defaultdict(list)
+            span_tag = self.soup.find_all('span', {'id': def_id})[0]
+            entry_key = None
+            entry_val = None
+            browse_tag = span_tag.parent
+            found = False
+            while True:
+                browse_tag = browse_tag.find_next_sibling()
+                if browse_tag.name in ['h3', 'h2']:
+                    break
+                elif browse_tag.name == 'h4':
+                    found = True
+                    break
+            if not found:
+                continue  # As there is no additional information for this def_id
+            self.DEBUG['first_additional'] = browse_tag
+            while browse_tag and browse_tag.name not in ['h3']:
+                info_tag = browse_tag
+                self.DEBUG['sequence_additional'] = browse_tag
+                browse_tag = browse_tag.find_next_sibling()
+                if info_tag.name == 'h4':
+                    for child in info_tag.find_all(recursive=True):
+                        # TODO decide whether want to keep related outside of additional info
+                        # Otherwise, take away this and parse_related, along with word data entry
+                        if child.attrs.get('class') in related_id_list:
+                            continue
+                    entry_key = info_tag.text
+                    entry_val = None
+                    continue
+
+                if info_tag.name == 'p':
+                    entry_val = info_tag.text
+                elif info_tag.name in ['ol', 'ul']:
+                    entry_val_list = []
+                    for element in info_tag.find_all('li', recursive=False):
+                        entry_val_list.append(element.text.strip())
+                    if len(entry_val_list) == 0:
+                        continue
+                    elif len(entry_val_list) == 1:
+                        entry_val = entry_val_list[0]
+                elif info_tag.name == 'div':
+                    if 'list-switcher' in info_tag.attrs.get('class', []):
+                        entry_val_list = []
+                        for element in info_tag.find_all('li', recursive=True):
+                            entry_val_list.append(element.text.strip())
+                        entry_val = entry_val_list
+                    elif 'NavFrame' in info_tag.attrs.get('class', []):
+                        head = info_tag.find('div', {'class': 'NavHead'})
+                        table = info_tag.find('div', {'class': 'NavContent'}).find('table')
+                        entry_val = (head, table)
+                    else:
+                        print(info_tag.attrs)
+                        raise NotImplementedError(
+                            "Other kind of class for a 'div' info_tag: {}".format(info_tag.attrs.get('class')))
+                else:
+                    raise NotImplementedError("Other kind of info_tag.name: {}".format(info_tag.name))
+                additional_information[entry_key].append(entry_val)
+            additional_information = {key: val if len(val) > 1 else val[0] for key, val in
+                                      additional_information.items()}
+            for info_type, info_value in additional_information.items():
+                info_value_fixed = None
+                if len(info_value) == 0:
+                    continue
+                elif len(info_value) > 1:
+                    info_value_fixed = info_value
+                elif info_value == 1:
+                    info_value_fixed = info_value[0]
+                additional_information_list.append((def_index, info_value_fixed, info_type))
+        return additional_information_list
 
     def parse_examples(self):
         definition_id_list = self.ids.get('definitions')
@@ -266,6 +359,26 @@ class WiktionaryParser(object):
                     words.append(list_tag.text)
             related_words_list.append((related_index, words, relation_type))
         return related_words_list
+
+    def parse_inflections(self):
+        inflection_id_list = self.ids.get('inflections')
+        inflections_list = []
+        for inflection_index, inflection_id, inflection_type in inflection_id_list:
+            # TODO Fix because it is not working for german or spanish
+            inflections = []
+            span_tag = self.soup.find_all('span', {'id': inflection_id})[0]
+            next_tag = span_tag.parent.find_next_sibling()
+            while next_tag and next_tag.name not in ['h3', 'h4', 'h5']:
+                inflection_tag = next_tag
+                next_tag = next_tag.find_next_sibling()
+                navframes = inflection_tag.find_all('div', {'class': 'NavFrame'}, recursive=True)
+                for navframe in navframes:
+                    head = navframe.find_all('div', {'class': 'NavHead'})[0].text
+                    table = navframe.find_all('div', {'class': 'NavContent'})[0]
+                    table = table.find_all('table')[0]
+                    inflections.append((head, table))
+            inflections_list.append((inflection_index, inflections, inflection_type))
+        return inflections_list
 
     def parse_translations(self):
         """Returns a structure of the kind:
@@ -355,7 +468,9 @@ class WiktionaryParser(object):
                     for related_word_index, related_words, relation_type in word_data['related']:
                         if related_word_index.startswith(definition_index):
                             def_obj.related_words.append(RelatedWord(relation_type, related_words))
-                    found = False
+                    for inflection_index, inflection_table, inflection_type in word_data['inflections']:
+                        if inflection_index.startswith(definition_index):
+                            def_obj.inflections.append(Inflection(inflection_type, inflection_table))
                     for translations_index, translations_list in word_data['translations']:
                         if definition_index <= translations_index < next_definition_index:
                             for sense, translations_dict in translations_list:
@@ -370,7 +485,7 @@ class WiktionaryParser(object):
 
     # TODO (Once this is language-specific). Change way language works
     # It already changed, so language is only set in constructor
-    def fetch(self, word, old_id=None, return_word_class=True):
+    def fetch(self, word, old_id=None, return_word_class=False):
         response = self.session.get(self.url.format(word), params={'oldid': old_id})
         self.soup = BeautifulSoup(response.text.replace('>\n<', '><'), 'html.parser')
         self.current_word = word
@@ -381,6 +496,10 @@ class WiktionaryParser(object):
         if not return_word_class:
             return word_data
         else:
+            # TODO Fix the Word initializer
+            # It gives problems because of the structure (main def entry, [list of subentries]) implemented
+            # It uses the method str.join() and not supported. example: german 'Räuber'
+            raise NotImplementedError
             return Word(word_data, self.current_word)
 
 
