@@ -1,9 +1,11 @@
 import re, requests
-from wiktionaryparser.utils import WordData, Definition, RelatedWord
 from bs4 import BeautifulSoup
 from itertools import zip_longest
 from copy import copy
 from string import digits
+
+from wiktionaryparser.utils import WordData, Definition, RelatedWord, Debugger
+from wiktionaryparser.logger import autolog
 
 PARTS_OF_SPEECH = [
     "noun", "verb", "adjective", "adverb", "determiner",

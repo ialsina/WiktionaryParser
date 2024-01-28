@@ -1,7 +1,21 @@
-requests==2.20.0
+astroid==2.5
 beautifulsoup4==4.9.1
+certifi==2022.5.18.1
+chardet==3.0.4
 deepdiff==5.0.2
-parameterized==0.7.4
-requests-futures==1.0.0
+idna==2.7
+isort==5.10.1
+lazy-object-proxy==1.7.1
+mccabe==0.6.1
 mock==4.0.2
+ordered-set==4.1.0
+parameterized==0.7.4
 pylint==2.6.0
+requests==2.20.0
+requests-futures==1.0.0
+soupsieve==2.3.2.post1
+toml==0.10.2
+urllib3==1.24.3
+-e git+ssh://git@github.com/ivanalsina/WiktionaryParser.git@71f396ef6e915b3d1461a41e8a7aec35063d30bf#egg=wikiparse
+wiktionaryparser==0.1.0
+wrapt==1.12.1

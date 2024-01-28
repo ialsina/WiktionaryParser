@@ -1,5 +1,6 @@
 from wiktionaryparser.utils import WordData, Definition, RelatedWord
 from wiktionaryparser.core import PARTS_OF_SPEECH, RELATIONS, WiktionaryParser
+from wiktionaryparser.definitions import PATH_LOG
 
 __all__ = [
     'WordData',
@@ -7,5 +8,6 @@ __all__ = [
     'RelatedWord',
     'PARTS_OF_SPEECH',
     'RELATIONS',
-    'WiktionaryParser'
+    'WiktionaryParser',
+    'PATH_LOG'
 ]
