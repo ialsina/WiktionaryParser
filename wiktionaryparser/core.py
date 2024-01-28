@@ -436,7 +436,6 @@ def _get_senses(transl_header, info=None):
         senses.append((sense, sense_tag))
         # Find next sibling
         sense_tag = sense_tag.find_next_sibling()
-    # logger.info("Senses: {}".format('; '.join([senses[i][0] for i in range(len(senses))])))
     logger.debug("Exit")
     return senses
 
@@ -564,21 +563,16 @@ def _extract_descriptions(lang_tag, info=None):
                     last_key = lang.lower()
                     last_val = ''
                 if isinstance(last_val, list):
-                    # to_update = last_val + [descr_tag.text] # Keep as list
                     to_update = '; '.join(last_val + [descr_tag.text])  # Convert to text (semicolon)
                 elif isinstance(last_val, str):
-                    # to_update = (last_val + '\n').replace('\n\n', '\n') + descr_tag.text # newlines
                     to_update = last_val + '; ' + descr_tag.text  # semicolons
                 logger.debug("Adding colonless description to LANG:{}".format(info.get('language')))
                 descriptions.update({last_key: to_update})
         else:
             logger.debug('SPECIAL CASE. LANG: {}, YES dl: {}'.format(lang, descr_tag))
             for sub_descr_tag in descr_tag.find_all('dl'):
-                # sub_descr = sub_descr_tag.text
-                # info.update(language='{}_{}_{}'.format(lang, descr, sub_descr))
                 descriptions.update(_extract_language_item_safe(sub_descr_tag, info=info))
                 sub_descr_tag.extract()
-            # info.update(language='{}_{}_sub-descr-extracted'.format(lang, descr_tag))
             descriptions.update(_extract_language_item_safe(descr_tag, info=info))
 
     logger.debug("Exit")
@@ -589,7 +583,6 @@ def _extract_languages(sense_tag, info=None):
     if info is None:
         info = {}
     logger.debug("Enter")
-    # logger.info("{:=<80}".format("SENSE:{}".format(info.get("sense"))))
     tables = sense_tag.find_all('table', recursive=True)
     info.update(html=sense_tag)
     if len(tables) > 1:
@@ -599,20 +592,12 @@ def _extract_languages(sense_tag, info=None):
     tbodies = tables[0].find_all('tbody', recursive=False)
     if len(tbodies) > 1:
         raise MultipleTablesError(info)
-    # tr = tbodies[0].find_all('tr')
-    # for column_tag in tr.find_all('td', recursive=False):
-    #     if column_tag.text == '':
-    #         column_tag.extract()
-    # lang_tags = [lang_tag for column in tr.find_all('td', recursive=False) \
-    #              for lang_tag in column.find('ul', recursive=False).find_all('li', recursive=False)]
-    # if len(lang_tags) == 0:
-    #     raise EmptySenseError(info)
 
     tr = tbodies[0].find('tr')
     columns_lang = tr.find_all('td', attrs={'class': 'translations-cell'})
     try:
         lang_tags = [column.find('li').parent.find_all('li', recursive=False) for column in columns_lang]
-        lang_tags = [lang_tag for column in lang_tags for lang_tag in column] #flatten
+        lang_tags = [lang_tag for column in lang_tags for lang_tag in column]  # flatten
     except AttributeError:
         raise EmptySenseError(info)
     if len(lang_tags) == 0:
