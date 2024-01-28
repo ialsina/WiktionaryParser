@@ -5,7 +5,8 @@ from copy import copy
 from string import digits
 
 from wiktionaryparser.utils import WordData, Definition, RelatedWord, Debugger, Word
-from wiktionaryparser.logger import autolog
+from wiktionaryparser.logger import autolog, errorlog
+from wiktionaryparser._exceptions import *
 
 PARTS_OF_SPEECH = [
     "noun", "verb", "adjective", "adverb", "determiner",
@@ -280,10 +281,10 @@ class WiktionaryParser(object):
             # If translations are somewhere else, go look for them
             if len(cur_transl_senses) == 1 and '/translations' in cur_transl_senses[0][1].text:
                 span_tag = _second_lookup(self.url, cur_transl_senses)
-                if self.DEBUG.get('transl2') is None: self.DEBUG['transl2'] = span_tag
+                self.DEBUG['transl2'] = span_tag
                 cur_transl_senses = _get_senses(span_tag.parent.find_next_sibling().find_next_sibling())
             for (sense, sense_tag) in cur_transl_senses:
-                cur_translation_list.append((sense, _extract_languages(sense_tag)))
+                cur_translation_list.append((sense, _extract_languages(sense_tag, word=self.current_word)))
                 self.DEBUG['extract_languages'] = cur_translation_list
             self.DEBUG['cur_transl_list'] = cur_translation_list
 
@@ -300,7 +301,8 @@ class WiktionaryParser(object):
             word_data['etymologies'] = [('', '')]
 
         # Loop over etimologies
-        for (current_etymology, next_etymology) in zip_longest(word_data['etymologies'], word_data['etymologies'][1:], fillvalue=('999', '')):
+        for (current_etymology, next_etymology) in zip_longest(word_data['etymologies'], word_data['etymologies'][1:],
+                                                               fillvalue=('999', '')):
             data_obj = WordData()
             data_obj.etymology = current_etymology[1]
 
@@ -310,7 +312,8 @@ class WiktionaryParser(object):
             #   2. Proununciation index "is sorted" after current etymology index
             #      and before next etymology index (string comparison)
             for pronunciation_index, pronunciation_text, audio_links in word_data['pronunciations']:
-                if (self.count_digits(current_etymology[0]) == self.count_digits(pronunciation_index)) or (current_etymology[0] <= pronunciation_index < next_etymology[0]):
+                if (self.count_digits(current_etymology[0]) == self.count_digits(pronunciation_index)) or (
+                        current_etymology[0] <= pronunciation_index < next_etymology[0]):
                     data_obj.pronunciations = pronunciation_text
                     data_obj.audio_links = audio_links
 
@@ -319,11 +322,13 @@ class WiktionaryParser(object):
             # and before next etymology index (string comparison)
             # If so, loop over examples, related and translations, and for each one,
             # pick the ones whose index starts like the definition index
-            for (current_definition, next_definition) in zip_longest(word_data['definitions'], word_data['definitions'][1:], fillvalue=('999', '', '')):
+            for (current_definition, next_definition) in zip_longest(word_data['definitions'],
+                                                                     word_data['definitions'][1:],
+                                                                     fillvalue=('999', '', '')):
                 definition_index, definition_text, definition_type = current_definition
                 next_definition_index, _, _ = next_definition
                 if current_etymology[0] <= definition_index < next_etymology[0]:
-                    autolog('\n>> {} {}'.format(definition_index,definition_text), 0)
+                    autolog('\n>> {} {}'.format(definition_index, definition_text), 0)
                     def_obj = Definition()
                     def_obj.text = definition_text
                     def_obj.part_of_speech = definition_type
@@ -373,7 +378,7 @@ def _is_subheading(child, parent):
     return True
 
 
-def _second_lookup(url, url_preffix, transl_senses):
+def _second_lookup(url, transl_senses):
     autolog(transl_senses, 2)
     url2 = transl_senses[0][1].find('a').get('href').replace('/wiki/', '')
     session2 = requests.Session()
@@ -417,7 +422,7 @@ def _get_senses(transl_tag):
     return senses
 
 
-def _extract_language_item(lang_tag):
+def _extract_language_item(lang_tag, word=None):
     unwanted_classes = ['tpos']
     enclose_classes = ['gender']
 
@@ -429,13 +434,11 @@ def _extract_language_item(lang_tag):
 
     # Take text, and separate: lang & translation (by colon)
     text = lang_tag.text
-    try:
-        key, items_text = text.split(':', 1)
-        text = [el.strip() for el in text]
-        autolog(f'KEY: {key}\n\tITEMS_TEXT: {items_text}', 2)
-    except:
-        print(text)
-        raise Exception("Impossible to extract language")
+    if not ":" in text:
+        raise MissingColonError(word, text)
+    key, items_text = text.split(":", 1)
+    #text = [el.strip() for el in text]
+    autolog(f'KEY: {key}\n\tITEMS_TEXT: {items_text}', 0)
 
     # Separate different items (by commas)
     # Also, replace '[[a|b]]' for 'b' (gender notation)
@@ -465,13 +468,23 @@ def _extract_language_item(lang_tag):
     return {key.lower(): items_list if len(items_list) > 1 else items_list[0]}
 
 
-def _extract_languages(sense_tag):
+def _extract_language_item_safe(tag, word=None):
+    try:
+        new_items = _extract_language_item(tag, word=word)
+    except TranslationParsingError as e:
+        new_items = {}
+        errorlog(e)
+    return new_items
+
+
+def _extract_languages(sense_tag, word=None):
+    autolog("Beginning languages extraction")
     lang_tags = sense_tag.find_all('li')
     lang_dict = {}
     for lang_tag in lang_tags:
         if not lang_tag.find_all('dl'):
             # There are no dialects (subitems in a language)
-            lang_dict = dict(lang_dict, **_extract_language_item(lang_tag))
+            lang_dict.update(_extract_language_item_safe(lang_tag, word=word))
         else:
             # There are dialects
             lang = lang_tag.text.split(':')[0]
@@ -483,19 +496,20 @@ def _extract_languages(sense_tag):
             if temp.text.replace('\n', '').split(':')[1] != '':
                 # There is still a main entry
                 autolog('SENDING {}'.format(temp), 2)
-                descriptions_dict = dict(descriptions_dict, **_extract_language_item(temp))
+                descriptions_dict.update(_extract_language_item_safe(temp, word=word))
 
             for descr in lang_tag.find_all('dd'):
                 if not descr.find_all('dl'):
                     autolog('LANG: {}, NOT dl: {}'.format(lang, descr), 0)
-                    descriptions_dict = dict(descriptions_dict, **_extract_language_item(descr))
+                    descriptions_dict.update(_extract_language_item_safe(descr, word=word))
                 else:
                     autolog('SPECIAL CASE. LANG: {}, YES dl: {}'.format(lang, descr), 2)
                     for descr2 in descr.find_all('dl'):
-                        descriptions_dict = dict(descriptions_dict, **_extract_language_item(descr2))
+                        descriptions_dict.update(_extract_language_item_safe(descr2, word=word))
                         descr2.extract()
-                    descriptions_dict = dict(descriptions_dict, **_extract_language_item(descr))
+                    descriptions_dict.update(_extract_language_item_safe(descr, word=word))
             lang_dict[lang.lower()] = descriptions_dict
+    autolog("Ending languages extraction")
     return lang_dict
 
 
@@ -503,19 +517,20 @@ def _new_debugger():
     return Debugger(
         word_contents='stop',
         cur_transl_list='lock',
-        extract_languages = 'replace',
+        extract_languages='replace',
         transl_tag='replace',
         cur_transl_tag='replace',
-        last_transl_tag = 'replace',
+        last_transl_tag='replace',
         translations_list='replace',
         parse_translations='lock',
-        map_to_object_input = 'replace',
-        map_to_object = 'replace',
-        json_obj_list = 'replace',
-        word_data0 = 'replace',
-        word_data = 'replace',
-        get_word_data = 'replace',
-        translations_id_list = 'lock',
-        transl1 = 'lock',
-        data_obj = 'lock',
+        map_to_object_input='replace',
+        map_to_object='replace',
+        json_obj_list='replace',
+        word_data0='replace',
+        word_data='replace',
+        get_word_data='replace',
+        translations_id_list='lock',
+        transl1='lock',
+        transl2='lock',
+        data_obj='lock',
     )
