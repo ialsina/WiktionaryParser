@@ -9,6 +9,10 @@ from wiktionaryparser.utils import WordData, Definition, RelatedWord, Translatio
 from wiktionaryparser.logger import logger
 from wiktionaryparser._exceptions import *
 
+# TODO split file for translations parsing
+# TODO implement see also
+
+
 PARTS_OF_SPEECH = [
     "noun", "verb", "adjective", "adverb", "determiner",
     "article", "preposition", "conjunction", "proper noun",
@@ -122,6 +126,8 @@ class WiktionaryParser(object):
                 start_index = content.find_previous().text + '.'
         if len(contents) > 0 and start_index is None:
             logger.debug(contents)
+            logger.error("Empty table of contents")
+            raise EmptyWordContents()
             return []
         for content in contents:
             index = content.find_previous().text
@@ -289,6 +295,7 @@ class WiktionaryParser(object):
                 self.DEBUG['cur_transl_senses'] = cur_transl_senses
             for (sense, sense_tag) in cur_transl_senses:
                 info.update(sense=sense)
+                # TODO follow link if (1) there is an italic tag with "see" in it (example under word 'word')
                 cur_translation_list.append((sense, _extract_languages_safe(sense_tag, info=info)))
                 self.DEBUG['extract_languages'] = cur_translation_list
             self.DEBUG['cur_transl_list'] = cur_translation_list

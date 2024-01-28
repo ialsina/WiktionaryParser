@@ -10,7 +10,8 @@ targets = [
     'hi',
     'the',
     'purple',
-    'foamy'
+    'foamy',
+    'word',
 ]
 
 json_contents = {}
