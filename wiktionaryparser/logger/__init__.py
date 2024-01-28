@@ -1,1 +1,1 @@
-from .logs import autolog, errorlog, clearlog
+from .logger import logger

@@ -5,7 +5,7 @@ from copy import copy
 from string import digits
 
 from wiktionaryparser.utils import WordData, Definition, RelatedWord, Debugger, Word
-from wiktionaryparser.logger import autolog, errorlog
+from wiktionaryparser.logger import logger
 from wiktionaryparser._exceptions import *
 
 PARTS_OF_SPEECH = [
@@ -106,7 +106,7 @@ class WiktionaryParser(object):
             if text_to_check in checklist:
                 content_id = content_tag.parent['href'].replace('#', '')
                 id_list.append((content_index, content_id, text_to_check))
-        autolog('IN: {} | OUT: {}'.format(content_type, id_list), 0)
+        logger.debug('IN: {} | OUT: {}'.format(content_type, id_list))
         return id_list
 
     def get_word_contents(self, language):
@@ -117,17 +117,16 @@ class WiktionaryParser(object):
             if content.text.lower() == language:
                 start_index = content.find_previous().text + '.'
         if len(contents) > 0 and start_index is None:
-            autolog(contents, 2)
+            logger.debug(contents)
             return []
         for content in contents:
             index = content.find_previous().text
             content_text = self.remove_digits(content.text.lower())
             if index.startswith(start_index) and content_text in self.INCLUDED_ITEMS:
                 word_contents.append(content)
-        autolog('CHECK2')
         self.word_contents = word_contents
         self.DEBUG['word_contents'] = word_contents
-        autolog(word_contents, 0)
+        logger.debug("Exit")
         return word_contents
 
     def get_word_data(self, language):
@@ -143,8 +142,8 @@ class WiktionaryParser(object):
         json_obj_list = self.map_to_object(word_data)
         self.DEBUG['get_word_data'] = json_obj_list
         self.DEBUG['word_data'] = json_obj_list
-        autolog('OUT: {}'.format('See DEBUG["get_word_data"]'), 2)
         json_obj_list = self.map_to_object(word_data)
+        logger.debug("Exit")
         return json_obj_list
 
     def parse_pronunciations(self):
@@ -284,17 +283,23 @@ class WiktionaryParser(object):
                 self.DEBUG['transl2'] = span_tag
                 cur_transl_senses = _get_senses(span_tag.parent.find_next_sibling().find_next_sibling())
             for (sense, sense_tag) in cur_transl_senses:
-                cur_translation_list.append((sense, _extract_languages(sense_tag, word=self.current_word)))
+                try:
+                    cur_translation_list.append((sense, _extract_languages(sense_tag, word=self.current_word)))
+                except TranslationParsingError as e:
+                    logger.warning(e)
+                except Exception as e:
+                    logger.error(e)
                 self.DEBUG['extract_languages'] = cur_translation_list
             self.DEBUG['cur_transl_list'] = cur_translation_list
 
             translations_list.append((translations_index, cur_translation_list))
-        autolog('translations_list: {}'.format(translations_list), 0)
+        logger.debug('translations_list: {}'.format(translations_list))
         self.DEBUG['translations_list'] = translations_list
         self.DEBUG['parse_translations'] = translations_list
         return translations_list
 
     def map_to_object(self, word_data):
+        logger.debug("Enter")
         self.DEBUG['map_to_object_input'] = word_data
         json_obj_list = []
         if not word_data['etymologies']:
@@ -328,7 +333,7 @@ class WiktionaryParser(object):
                 definition_index, definition_text, definition_type = current_definition
                 next_definition_index, _, _ = next_definition
                 if current_etymology[0] <= definition_index < next_etymology[0]:
-                    autolog('\n>> {} {}'.format(definition_index, definition_text), 0)
+                    logger.debug('\n>> {} {}'.format(definition_index, definition_text))
                     def_obj = Definition()
                     def_obj.text = definition_text
                     def_obj.part_of_speech = definition_type
@@ -342,14 +347,14 @@ class WiktionaryParser(object):
                     for translations_index, translations_dict in word_data['translations']:
                         if definition_index <= translations_index < next_definition_index:
                             def_obj.translations = translations_dict
-                            autolog('COND 1: {} {}'.format(translations_index, definition_index), 0)
+                            logger.debug('COND 1: {} {}'.format(translations_index, definition_index))
                     data_obj.definition_list.append(def_obj)
             self.DEBUG['data_obj'] = data_obj
             json_obj_list.append(data_obj.to_json())
 
         self.DEBUG['map_to_object'] = json_obj_list
         self.DEBUG['json_obj_list'] = json_obj_list
-        autolog('OUT: See DEBUG["map_to_object"]', 0)
+        logger.debug("Exit")
 
         return json_obj_list
 
@@ -379,13 +384,13 @@ def _is_subheading(child, parent):
 
 
 def _second_lookup(url, transl_senses):
-    autolog(transl_senses, 2)
     url2 = transl_senses[0][1].find('a').get('href').replace('/wiki/', '')
     session2 = requests.Session()
     session2.mount("http://", requests.adapters.HTTPAdapter(max_retries=2))
     session2.mount("https://", requests.adapters.HTTPAdapter(max_retries=2))
     response = session2.get(url.format(url2))
     soup2 = BeautifulSoup(response.text, 'html.parser')
+    logger.debug("Exit")
     return soup2.find('span', {'id': url2.split('#')[1]})
 
 
@@ -423,6 +428,7 @@ def _get_senses(transl_tag):
 
 
 def _extract_language_item(lang_tag, word=None):
+    logger.debug("Enter")
     unwanted_classes = ['tpos']
     enclose_classes = ['gender']
 
@@ -438,7 +444,6 @@ def _extract_language_item(lang_tag, word=None):
         raise MissingColonError(word, text)
     key, items_text = text.split(":", 1)
     #text = [el.strip() for el in text]
-    autolog(f'KEY: {key}\n\tITEMS_TEXT: {items_text}', 0)
 
     # Separate different items (by commas)
     # Also, replace '[[a|b]]' for 'b' (gender notation)
@@ -465,6 +470,7 @@ def _extract_language_item(lang_tag, word=None):
         items_list = items_new
 
     # Return a dict whose value is the list or its only element
+    logger.debug("Exit")
     return {key.lower(): items_list if len(items_list) > 1 else items_list[0]}
 
 
@@ -473,12 +479,15 @@ def _extract_language_item_safe(tag, word=None):
         new_items = _extract_language_item(tag, word=word)
     except TranslationParsingError as e:
         new_items = {}
-        errorlog(e)
+        logger.warning(e)
+    except Exception as e:
+        new_items = {}
+        logger.error(e)
     return new_items
 
 
 def _extract_languages(sense_tag, word=None):
-    autolog("Beginning languages extraction")
+    logger.debug("Enter")
     lang_tags = sense_tag.find_all('li')
     lang_dict = {}
     for lang_tag in lang_tags:
@@ -495,21 +504,21 @@ def _extract_languages(sense_tag, word=None):
 
             if temp.text.replace('\n', '').split(':')[1] != '':
                 # There is still a main entry
-                autolog('SENDING {}'.format(temp), 2)
+                logger.debug('SENDING {}'.format(temp))
                 descriptions_dict.update(_extract_language_item_safe(temp, word=word))
 
             for descr in lang_tag.find_all('dd'):
                 if not descr.find_all('dl'):
-                    autolog('LANG: {}, NOT dl: {}'.format(lang, descr), 0)
+                    logger.debug('LANG: {}, NOT dl: {}'.format(lang, descr))
                     descriptions_dict.update(_extract_language_item_safe(descr, word=word))
                 else:
-                    autolog('SPECIAL CASE. LANG: {}, YES dl: {}'.format(lang, descr), 2)
+                    logger.debug('SPECIAL CASE. LANG: {}, YES dl: {}'.format(lang, descr))
                     for descr2 in descr.find_all('dl'):
                         descriptions_dict.update(_extract_language_item_safe(descr2, word=word))
                         descr2.extract()
                     descriptions_dict.update(_extract_language_item_safe(descr, word=word))
             lang_dict[lang.lower()] = descriptions_dict
-    autolog("Ending languages extraction")
+    logger.debug("Exit")
     return lang_dict
 
 
