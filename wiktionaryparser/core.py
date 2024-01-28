@@ -7,71 +7,66 @@ from collections import OrderedDict
 
 from wiktionaryparser.utils import WordData, Definition, RelatedWord, TranslationSense, Word, default_debugger
 from wiktionaryparser.logger import logger
+from wiktionaryparser.terminology import TERMINOLOGY_PARTS_OF_SPEECH, TERMINOLOGY_RELATIONS, TERMINOLOGY_ADDITIONAL
 from wiktionaryparser._exceptions import *
 
 # TODO split file for translations parsing
 # TODO implement see also
-
-
-PARTS_OF_SPEECH = [
-    "noun", "verb", "adjective", "adverb", "determiner",
-    "article", "preposition", "conjunction", "proper noun",
-    "letter", "character", "phrase", "proverb", "idiom",
-    "symbol", "syllable", "numeral", "initialism", "interjection",
-    "definitions", "pronoun", "particle", "predicative", "participle",
-    "suffix",
-]
-
-RELATIONS = [
-    "synonyms", "antonyms", "hypernyms", "hyponyms",
-    "meronyms", "holonyms", "troponyms", "related terms",
-    "coordinate terms",
-]
+# TODO change to language-specific via inheritance
+# TODO swich towards Parser/Word distinction. Separation "factory/product"
 
 
 class WiktionaryParser(object):
+
+    _PARTS_OF_SPEECH = set(TERMINOLOGY_PARTS_OF_SPEECH)
+    _RELATIONS = set(TERMINOLOGY_RELATIONS)
+    _ADDITIONAL_ITEMS = set(TERMINOLOGY_ADDITIONAL)
+
     def __init__(self, language="english"):
         self.word_contents = None
-        self.url = "https://en.wiktionary.org/wiki/{}?printable=yes"
+        self.ids = None
+        self.current_word = None
         self.soup = None
+        self._included_parts_of_speech = set()
+        self._included_relations = set()
+        self.url = "https://en.wiktionary.org/wiki/{}?printable=yes"
         self.session = requests.Session()
         self.session.mount("http://", requests.adapters.HTTPAdapter(max_retries=2))
         self.session.mount("https://", requests.adapters.HTTPAdapter(max_retries=2))
         self.language = language
-        self.current_word = None
-        self.PARTS_OF_SPEECH = copy(PARTS_OF_SPEECH)
-        self.RELATIONS = copy(RELATIONS)
-        self.INCLUDED_ITEMS = self.RELATIONS + self.PARTS_OF_SPEECH + ['etymology', 'pronunciation', 'translations']
         self.DEBUG = default_debugger()
 
+    def clear(self):
+        self.word_contents = None
+        self.ids = None
+        self.current_word = None
+        self.soup = None
+        self.DEBUG = default_debugger()
+
+    @property
+    def PARTS_OF_SPEECH(self):
+        return self._PARTS_OF_SPEECH
+
+    @property
+    def RELATIONS(self):
+        return self._RELATIONS
+
+    @property
+    def ALL_TERMS(self):
+        return self._PARTS_OF_SPEECH + self._RELATIONS + self._ADDITIONAL_ITEMS + \
+            self._included_parts_of_speech + self._included_relations
+
     def include_part_of_speech(self, part_of_speech):
-        part_of_speech = part_of_speech.lower()
-        if part_of_speech not in self.PARTS_OF_SPEECH:
-            self.PARTS_OF_SPEECH.append(part_of_speech)
-            self.INCLUDED_ITEMS.append(part_of_speech)
+        self._included_parts_of_speech.add(part_of_speech.lower())
 
     def exclude_part_of_speech(self, part_of_speech):
-        part_of_speech = part_of_speech.lower()
-        self.PARTS_OF_SPEECH.remove(part_of_speech)
-        self.INCLUDED_ITEMS.remove(part_of_speech)
+        self._included_parts_of_speech.remove(part_of_speech.lower())
 
     def include_relation(self, relation):
-        relation = relation.lower()
-        if relation not in self.RELATIONS:
-            self.RELATIONS.append(relation)
-            self.INCLUDED_ITEMS.append(relation)
+        self._included_relations.add(relation.lower())
 
     def exclude_relation(self, relation):
-        relation = relation.lower()
-        self.RELATIONS.remove(relation)
-        self.INCLUDED_ITEMS.remove(relation)
-
-    def set_default_language(self, language=None):
-        if language is not None:
-            self.language = language.lower()
-
-    def get_default_language(self):
-        return self.language
+        self._included_relations.remove(relation.lower())
 
     def clean_html(self):
         unwanted_classes = ['sister-wikipedia', 'thumb', 'reference', 'cited-source']
@@ -86,60 +81,57 @@ class WiktionaryParser(object):
     def count_digits(cls, string):
         return len(list(filter(str.isdigit, string)))
 
-    def get_id_list(self, content_type):
+    def set_ids(self):
+        checklist_by_type = {
+            'etymologies': ['etymology'],
+            'pronunciation': ['pronunciation'],
+            'definitions': self.PARTS_OF_SPEECH,
+            'related': self.RELATIONS,
+            'translations': ['translations'],
+        }
+        if self.language == 'chinese':
+            checklist_by_type['definitions'] += self.current_word
 
-        soup = self.soup
-        contents = self.word_contents
+        ids = {}
+        word_contents = self.word_contents
 
-        if content_type == 'etymologies':
-            checklist = ['etymology']
-        elif content_type == 'pronunciation':
-            checklist = ['pronunciation']
-        elif content_type == 'definitions':
-            checklist = self.PARTS_OF_SPEECH
-            if self.language == 'chinese':
-                checklist += self.current_word
-        elif content_type == 'related':
-            checklist = self.RELATIONS
-        elif content_type == 'translations':
-            checklist = ['translations']
-        else:
-            return None
-        id_list = []
-        if len(contents) == 0:
-            return [('1', x.title(), x) for x in checklist if self.soup.find('span', {'id': x.title()})]
-        for content_tag in contents:
-            content_index = content_tag.find_previous().text
-            text_to_check = self.remove_digits(content_tag.text).strip().lower()
-            if text_to_check in checklist:
-                content_id = content_tag.parent['href'].replace('#', '')
-                id_list.append((content_index, content_id, text_to_check))
-        logger.debug('IN: {} | OUT: {}'.format(content_type, id_list))
-        return id_list
+        for content_type, checklist in checklist_by_type.items():
+            if len(word_contents) == 0:
+                ids = [('1', x.title(), x) for x in checklist if self.soup.find('span', {'id': x.title()})]
+            else:
+                ids_current_type = []
+                for content_tag in word_contents:
+                    content_index = content_tag.find_previous().text
+                    text_to_check = self.remove_digits(content_tag.text).strip().lower()
+                    if text_to_check in checklist:
+                        content_id = content_tag.parent['href'].replace('#', '')
+                        ids_current_type.append((content_index, content_id, text_to_check))
+            ids[content_type] = ids_current_type
+        self.ids = ids
 
-    def get_word_contents(self, language):
+
+    def set_word_contents(self):
         contents = self.soup.find_all('span', {'class': 'toctext'})
         word_contents = []
         start_index = None
         for content in contents:
-            if content.text.lower() == language:
+            if content.text.lower() == self.language:
                 start_index = content.find_previous().text + '.'
         if len(contents) > 0 and start_index is None:
             logger.debug(contents)
             logger.error("Empty table of contents")
             raise EmptyWordContents()
-            return []
-        for content in contents:
-            index = content.find_previous().text
-            content_text = self.remove_digits(content.text.lower())
-            if index.startswith(start_index) and content_text in self.INCLUDED_ITEMS:
-                word_contents.append(content)
-        self.word_contents = word_contents
-        self.DEBUG['word_contents'] = word_contents
-        logger.debug("Exit")
-        return word_contents
+        else:
+            for content in contents:
+                index = content.find_previous().text
+                content_text = self.remove_digits(content.text.lower())
+                if index.startswith(start_index) and content_text in self.INCLUDED_ITEMS:
+                    word_contents.append(content)
+            self.word_contents = word_contents
+            self.DEBUG['word_contents'] = word_contents
+            logger.debug("Exit")
 
-    def get_word_data(self, language):
+    def get_word_data(self):
         word_data = {
             'examples': self.parse_examples(),
             'definitions': self.parse_definitions(),
@@ -152,12 +144,11 @@ class WiktionaryParser(object):
         json_obj_list = self.map_to_object(word_data)
         self.DEBUG['get_word_data'] = json_obj_list
         self.DEBUG['word_data'] = json_obj_list
-        json_obj_list = self.map_to_object(word_data)
         logger.debug("Exit")
         return json_obj_list
 
     def parse_pronunciations(self):
-        pronunciation_id_list = self.get_id_list('pronunciation')
+        pronunciation_id_list = self.ids.get('pronunciation')
         pronunciation_list = []
         audio_links = []
         pronunciation_div_classes = ['mw-collapsible', 'vsSwitcher']
@@ -186,7 +177,7 @@ class WiktionaryParser(object):
         return pronunciation_list
 
     def parse_definitions(self):
-        definition_id_list = self.get_id_list('definitions')
+        definition_id_list = self.ids.get('definitions')
         definition_list = []
         definition_tag = None
         for def_index, def_id, def_type in definition_id_list:
@@ -209,7 +200,7 @@ class WiktionaryParser(object):
         return definition_list
 
     def parse_examples(self):
-        definition_id_list = self.get_id_list('definitions')
+        definition_id_list = self.ids.get('definitions')
         example_list = []
         for def_index, def_id, def_type in definition_id_list:
             span_tag = self.soup.find_all('span', {'id': def_id})[0]
@@ -230,7 +221,7 @@ class WiktionaryParser(object):
         return example_list
 
     def parse_etymologies(self):
-        etymology_id_list = self.get_id_list('etymologies')
+        etymology_id_list = self.ids.get('etymologies')
         etymology_list = []
         etymology_tag = None
         for etymology_index, etymology_id, _ in etymology_id_list:
@@ -249,7 +240,7 @@ class WiktionaryParser(object):
         return etymology_list
 
     def parse_related_words(self):
-        relation_id_list = self.get_id_list('related')
+        relation_id_list = self.ids.get('related')
         related_words_list = []
         for related_index, related_id, relation_type in relation_id_list:
             words = []
@@ -276,7 +267,7 @@ class WiktionaryParser(object):
             ...
         ]
             """
-        translations_id_list = self.get_id_list('translations')
+        translations_id_list = self.ids.get('translations')
         translations_list = []
         self.DEBUG['translations_id_list'] = translations_id_list
         info = dict(word=self.current_word)
@@ -306,14 +297,14 @@ class WiktionaryParser(object):
         self.DEBUG['parse_translations'] = translations_list
         return translations_list
 
-    def map_to_object(self, word_data):
+    @classmethod
+    def map_to_object(cls, word_data):
         logger.debug("Enter")
-        self.DEBUG['map_to_object_input'] = word_data
         json_obj_list = []
         if not word_data['etymologies']:
             word_data['etymologies'] = [('', '')]
 
-        # Loop over etimologies
+        # Loop over etymologies
         for (current_etymology, next_etymology) in zip_longest(word_data['etymologies'], word_data['etymologies'][1:],
                                                                fillvalue=('999', '')):
             data_obj = WordData()
@@ -322,10 +313,10 @@ class WiktionaryParser(object):
             # Loop over pronunciations
             # Check if:
             #   1. Pronunciation is at the same level of etymology(ies)
-            #   2. Proununciation index "is sorted" after current etymology index
+            #   2. Pronunciation index "is sorted" after current etymology index
             #      and before next etymology index (string comparison)
             for pronunciation_index, pronunciation_text, audio_links in word_data['pronunciations']:
-                if (self.count_digits(current_etymology[0]) == self.count_digits(pronunciation_index)) or (
+                if (cls.count_digits(current_etymology[0]) == cls.count_digits(pronunciation_index)) or (
                         current_etymology[0] <= pronunciation_index < next_etymology[0]):
                     data_obj.pronunciations = pronunciation_text
                     data_obj.audio_links = audio_links
@@ -358,23 +349,21 @@ class WiktionaryParser(object):
                                 def_obj.translations.append(TranslationSense(sense, translations_dict))
                                 logger.debug('COND 1: {} {}'.format(translations_index, definition_index))
                     data_obj.definition_list.append(def_obj)
-            self.DEBUG['data_obj'] = data_obj
             json_obj_list.append(data_obj.to_json())
 
-        self.DEBUG['map_to_object'] = json_obj_list
-        self.DEBUG['json_obj_list'] = json_obj_list
         logger.debug("Exit")
 
         return json_obj_list
 
-    def fetch(self, word, language=None, old_id=None, return_word_class=True):
-        language = self.language if not language else language
+    # TODO (Once this is language-specific). Change way language works
+    # It already changed, so language is only set in constructor
+    def fetch(self, word, old_id=None, return_word_class=True):
         response = self.session.get(self.url.format(word), params={'oldid': old_id})
         self.soup = BeautifulSoup(response.text.replace('>\n<', '><'), 'html.parser')
         self.current_word = word
         self.clean_html()
-        self.get_word_contents(language)
-        word_data = self.get_word_data(language)
+        self.set_word_contents()
+        word_data = self.get_word_data()
         if not return_word_class:
             return word_data
         else:
